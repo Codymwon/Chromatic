@@ -1,0 +1,16 @@
+# Godot 4+ specific ignores
+.godot/
+*.translation
+
+# Android build and exports
+android/build/
+android/.gradle/
+*.apk
+*.aab
+
+# Local docs not tracked
+docs/milestones/
+
+# User data
+user/
+*.cfg
