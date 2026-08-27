@@ -3,10 +3,16 @@
 *.translation
 
 # Android build and exports
-android/build/
+android/build/.gradle/
+android/build/build/
+android/build/assetPacks/
+android/build/libs/
 android/.gradle/
 *.apk
 *.aab
+*.aar
+*.keystore
+*.jks
 
 # Local docs not tracked
 docs/milestones/
