@@ -171,8 +171,9 @@ REFERENCE: current beam_tracer.gd (paste it)
 
 **Workflow tips:**
 - One milestone (or fewer) per conversation; long sessions cause drift.
+- **Branch & Test Loop**: `git checkout -b m<N>-<slug>` $\to$ apply $\to$ `godot --headless --script res://tests/run_tests.gd`.
+- **Commit Granularity**: Commit in logical chunks (e.g. `M3(core): fan angle math per Law 3 (#14)`, then `M3(tests): fan assertions (#14)`) — not one mega-commit. Include issue number in every message.
 - After each delivery: run `godot --headless --script res://tests/run_tests.gd` and open the editor; **paste back any error text verbatim** — AI fixes fastest with real output.
-- Commit per accepted milestone (`git commit -m "M2: mirrors"`).
 - If AI breaks the spec (e.g., angles depending on incidence), quote the gameplay law line and demand a fix — don't let exceptions accumulate.
 
 ---

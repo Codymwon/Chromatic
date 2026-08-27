@@ -10,6 +10,11 @@ android/.gradle/
 
 # Local docs not tracked
 docs/milestones/
+docs/tickets/
+.agents/
+.agent/
+GEMINI.md
+AGENTS.md
 
 # User data
 user/
