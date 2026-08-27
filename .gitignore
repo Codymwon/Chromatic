@@ -7,6 +7,11 @@ android/build/.gradle/
 android/build/build/
 android/build/assetPacks/
 android/build/libs/
+android/build/src/main/assets/
+android/build/src/debug/
+android/build/res/drawable/
+android/build/res/mipmap/
+android/build/res/mipmap-*/
 android/.gradle/
 *.apk
 *.aab
@@ -22,6 +27,6 @@ docs/tickets/
 GEMINI.md
 AGENTS.md
 
-# User data
+# User data & private credentials
 user/
-*.cfg
+export_credentials.cfg
