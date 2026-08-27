@@ -1,8 +1,6 @@
 class_name MainLauncher
 extends Control
 
-@onready var title_label: Label = $CenterContainer/TitleLabel
-
 func _ready() -> void:
 	var vp_size: Vector2 = get_viewport_rect().size
 	print("[MainLauncher] Viewport initialized: ", vp_size)

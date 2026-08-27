@@ -1,3 +1,4 @@
+class_name HeadlessTestRunner
 extends SceneTree
 
 func _init() -> void:
@@ -15,28 +16,29 @@ func _init() -> void:
 		print("PASSED: All tests passed successfully.")
 		quit(0)
 
-func test_main_scene_load() -> int:
-	print("[TEST] Loading res://scenes/main.tscn...")
+func _instantiate_main_scene() -> Control:
 	var scene_res: PackedScene = load("res://scenes/main.tscn")
 	if scene_res == null:
-		printerr("FAIL: Could not load res://scenes/main.tscn")
+		return null
+	return scene_res.instantiate() as Control
+
+func test_main_scene_load() -> int:
+	print("[TEST] Loading res://scenes/main.tscn...")
+	var instance: Control = _instantiate_main_scene()
+	if instance == null:
+		printerr("FAIL: Could not load or instantiate res://scenes/main.tscn")
 		return 1
-	var scene_instance: Node = scene_res.instantiate()
-	if scene_instance == null:
-		printerr("FAIL: Could not instantiate res://scenes/main.tscn")
-		return 1
-	if not (scene_instance is Control):
-		printerr("FAIL: Root node is not Control")
-		scene_instance.free()
-		return 1
-	scene_instance.free()
+	instance.free()
 	print("  -> OK")
 	return 0
 
 func test_main_scene_hierarchy() -> int:
 	print("[TEST] Verifying main scene node hierarchy...")
-	var scene_res: PackedScene = load("res://scenes/main.tscn")
-	var root: Node = scene_res.instantiate()
+	var root: Control = _instantiate_main_scene()
+	if root == null:
+		printerr("FAIL: Could not instantiate main scene")
+		return 1
+		
 	var bg: ColorRect = root.get_node_or_null("Background") as ColorRect
 	if bg == null:
 		printerr("FAIL: Background ColorRect not found")
@@ -59,23 +61,23 @@ func test_main_scene_hierarchy() -> int:
 
 func test_input_emulation_event() -> int:
 	print("[TEST] Verifying MainLauncher touch input handling...")
-	var scene_res: PackedScene = load("res://scenes/main.tscn")
-	var root: Control = scene_res.instantiate() as Control
+	var root: Control = _instantiate_main_scene()
+	if root == null:
+		printerr("FAIL: Could not instantiate main scene")
+		return 1
 	
-	# Simulate screen touch event
+	# Test touch event handling
 	var touch: InputEventScreenTouch = InputEventScreenTouch.new()
 	touch.index = 0
 	touch.position = Vector2(960, 540)
 	touch.pressed = true
-	
 	root._unhandled_input(touch)
 	
-	# Simulate screen drag event
+	# Test drag event handling
 	var drag: InputEventScreenDrag = InputEventScreenDrag.new()
 	drag.index = 0
 	drag.position = Vector2(980, 540)
 	drag.relative = Vector2(20, 0)
-	
 	root._unhandled_input(drag)
 	
 	root.free()
