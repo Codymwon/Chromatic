@@ -5,6 +5,8 @@ const BeamTypes = preload("res://core/beam_types.gd")
 const BeamTracer = preload("res://core/beam_tracer.gd")
 const BeamRenderer = preload("res://scenes/fx/beam_renderer.gd")
 const LightSource = preload("res://scenes/objects/light_source.gd")
+const M1TestLevel = preload("res://scenes/level/m1_test_level.gd")
+const M1_LEVEL_SCENE: PackedScene = preload("res://scenes/level/m1_test_level.tscn")
 
 var _passed_count: int = 0
 var _failed_count: int = 0
@@ -371,6 +373,70 @@ func test_light_source_scene_instantiation() -> void:
 		assert_true(nozzle_visual != null, "LightSource scene should have NozzleVisual node")
 		instance.free()
 
+# --- End-to-End Integration Tests (M1 Issue 05) ---
+
+func test_m1_test_level_scene_structure() -> void:
+	var instance: Node = M1_LEVEL_SCENE.instantiate()
+	assert_true(instance is M1TestLevel, "Scene root should be instance of M1TestLevel")
+
+	var beam_renderer_node: Node = instance.get_node_or_null("BeamRenderer")
+	assert_true(beam_renderer_node is BeamRenderer, "Level should contain BeamRenderer")
+
+	var light_source_node: Node = instance.get_node_or_null("LightSource")
+	assert_true(light_source_node is LightSource, "Level should contain LightSource")
+
+	var wall_node: StaticBody2D = instance.get_node_or_null("Wall") as StaticBody2D
+	assert_true(wall_node != null, "Level should contain Wall")
+	if wall_node != null:
+		assert_eq(wall_node.collision_layer, 1, "Wall collision layer should be 1")
+
+	instance.free()
+
+func test_m1_test_level_beam_tracing_physics() -> void:
+	var level: M1TestLevel = M1_LEVEL_SCENE.instantiate() as M1TestLevel
+	var space: PhysicsDirectSpaceState2D = root.world_2d.direct_space_state
+
+	var body_rid: RID = PhysicsServer2D.body_create()
+	PhysicsServer2D.body_set_space(body_rid, root.world_2d.space)
+	var shape_rid: RID = PhysicsServer2D.rectangle_shape_create()
+	PhysicsServer2D.shape_set_data(shape_rid, Vector2(20.0, 150.0))
+	PhysicsServer2D.body_add_shape(body_rid, shape_rid, Transform2D(0.0, Vector2(800.0, 540.0)))
+	PhysicsServer2D.body_set_collision_layer(body_rid, 1)
+
+	var segments: Array[BeamTypes.Segment] = level.update_beam(space)
+	assert_eq(segments.size(), 1, "Should produce 1 segment from light source to wall")
+	if segments.size() > 0:
+		var seg: BeamTypes.Segment = segments[0]
+		assert_vector_approx(seg.a, Vector2(224.0, 540.0), 0.001, "Segment start should match light source aperture origin")
+		assert_vector_approx(seg.b, Vector2(780.0, 540.0), 1.0, "Segment end should terminate at wall face (x=780)")
+		assert_eq(seg.color, BeamTypes.RayColor.WHITE, "Beam color should be WHITE")
+
+	PhysicsServer2D.free_rid(shape_rid)
+	PhysicsServer2D.free_rid(body_rid)
+	level.free()
+
+func test_m1_test_level_open_space_tracing() -> void:
+	var level: M1TestLevel = M1_LEVEL_SCENE.instantiate() as M1TestLevel
+	var space: PhysicsDirectSpaceState2D = root.world_2d.direct_space_state
+
+	var segments: Array[BeamTypes.Segment] = level.update_beam(space)
+	assert_eq(segments.size(), 1, "Should produce 1 open ray segment")
+	if segments.size() > 0:
+		var seg: BeamTypes.Segment = segments[0]
+		assert_vector_approx(seg.a, Vector2(224.0, 540.0), 0.001, "Segment start should be aperture origin")
+		assert_vector_approx(seg.b, Vector2(224.0 + GameConstants.MAX_RAY_DISTANCE, 540.0), 1.0, "Segment should reach MAX_RAY_DISTANCE")
+
+	level.free()
+
+func test_m1_test_level_dirty_flag() -> void:
+	var level: M1TestLevel = M1_LEVEL_SCENE.instantiate() as M1TestLevel
+	assert_eq(level.is_dirty, true, "Level should start in dirty state")
+	level._process(0.016)
+	assert_eq(level.is_dirty, false, "Level should clear dirty flag after process frame")
+	level.mark_dirty()
+	assert_eq(level.is_dirty, true, "mark_dirty() should set is_dirty to true")
+	level.free()
+
 # --- M0 Regression Tests ---
 
 func test_m0_main_scene_load() -> void:
@@ -385,32 +451,32 @@ func test_m0_main_scene_load() -> void:
 func test_m0_main_scene_hierarchy() -> void:
 	var scene_res: PackedScene = load("res://scenes/main.tscn")
 	if scene_res != null:
-		var root: Node = scene_res.instantiate()
-		if root != null:
-			var bg: ColorRect = root.get_node_or_null("Background") as ColorRect
+		var root_node: Node = scene_res.instantiate()
+		if root_node != null:
+			var bg: ColorRect = root_node.get_node_or_null("Background") as ColorRect
 			assert_true(bg != null, "Background ColorRect should exist")
-			var label: Label = root.get_node_or_null("CenterContainer/TitleLabel") as Label
+			var label: Label = root_node.get_node_or_null("CenterContainer/TitleLabel") as Label
 			assert_true(label != null, "CenterContainer/TitleLabel should exist")
 			if label != null:
 				assert_eq(label.text, "Chromatic - Shell Ready", "Title label text should match")
-			root.free()
+			root_node.free()
 
 func test_m0_input_emulation_event() -> void:
 	var scene_res: PackedScene = load("res://scenes/main.tscn")
 	if scene_res != null:
-		var root: Node = scene_res.instantiate()
-		if root != null:
+		var root_node: Node = scene_res.instantiate()
+		if root_node != null:
 			var touch: InputEventScreenTouch = InputEventScreenTouch.new()
 			touch.index = 0
 			touch.position = Vector2(960, 540)
 			touch.pressed = true
-			root._unhandled_input(touch)
+			root_node._unhandled_input(touch)
 
 			var drag: InputEventScreenDrag = InputEventScreenDrag.new()
 			drag.index = 0
 			drag.position = Vector2(980, 540)
 			drag.relative = Vector2(20, 0)
-			root._unhandled_input(drag)
+			root_node._unhandled_input(drag)
 
 			assert_true(true, "Input handling executed without error")
-			root.free()
+			root_node.free()

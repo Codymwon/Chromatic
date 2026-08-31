@@ -1,0 +1,31 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scenes/level/m1_test_level.gd" id="1_level"]
+[ext_resource type="PackedScene" path="res://scenes/fx/beam_renderer.tscn" id="2_renderer"]
+[ext_resource type="PackedScene" path="res://scenes/objects/light_source.tscn" id="3_source"]
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_wall"]
+size = Vector2(40, 300)
+
+[node name="M1TestLevel" type="Node2D"]
+script = ExtResource("1_level")
+
+[node name="BeamRenderer" parent="." instance=ExtResource("2_renderer")]
+
+[node name="LightSource" parent="." instance=ExtResource("3_source")]
+position = Vector2(200, 540)
+
+[node name="Wall" type="StaticBody2D" parent="."]
+position = Vector2(800, 540)
+collision_layer = 1
+collision_mask = 0
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Wall"]
+shape = SubResource("RectangleShape2D_wall")
+
+[node name="Visual" type="ColorRect" parent="Wall"]
+offset_left = -20.0
+offset_top = -150.0
+offset_right = 20.0
+offset_bottom = 150.0
+color = Color(0.3, 0.35, 0.45, 1)
