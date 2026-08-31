@@ -3,6 +3,7 @@ extends SceneTree
 const GameConstants = preload("res://core/constants.gd")
 const BeamTypes = preload("res://core/beam_types.gd")
 const BeamTracer = preload("res://core/beam_tracer.gd")
+const BeamRenderer = preload("res://scenes/fx/beam_renderer.gd")
 
 var _passed_count: int = 0
 var _failed_count: int = 0
@@ -156,7 +157,6 @@ func test_beam_tracer_open_ray_hits_nothing() -> void:
 		assert_vector_approx(segments[0].b, Vector2(GameConstants.MAX_RAY_DISTANCE, 0.0), 0.001, "Open ray segment end should be origin + dir * MAX_RAY_DISTANCE")
 		assert_eq(segments[0].color, BeamTypes.RayColor.WHITE, "Open ray default color should be WHITE")
 
-	# Test with custom origin and color
 	var custom_origin := Vector2(100.0, 50.0)
 	var custom_dir := Vector2.DOWN
 	var red_segments: Array[BeamTypes.Segment] = BeamTracer.trace(mock_cast, custom_origin, custom_dir, BeamTypes.RayColor.RED)
@@ -201,7 +201,6 @@ func test_beam_tracer_max_bounces_limit() -> void:
 	assert_eq(call_count[0], 1, "Wall hit terminates ray tracing")
 	assert_eq(segments.size(), 1, "Should generate segment up to hit point")
 
-	# Test max_bounces = 0
 	var zero_segments: Array[BeamTypes.Segment] = BeamTracer.trace(mock_infinite_cast, Vector2.ZERO, Vector2.RIGHT, BeamTypes.RayColor.BLUE, 0)
 	assert_eq(zero_segments.size(), 0, "max_bounces = 0 should return empty segments")
 
@@ -223,6 +222,106 @@ func test_beam_tracer_zero_direction() -> void:
 	
 	var segments: Array[BeamTypes.Segment] = BeamTracer.trace(mock_cast, Vector2.ZERO, Vector2.ZERO)
 	assert_eq(segments.size(), 0, "Zero direction vector should produce empty segments")
+
+# --- Unit Tests for BeamRenderer (M1 Issue 03) ---
+
+func test_beam_renderer_pool_initialization() -> void:
+	var renderer: BeamRenderer = BeamRenderer.new()
+	renderer._init_pool()
+	
+	assert_eq(renderer.get_child_count(), 64, "BeamRenderer pool should have 64 total Line2D children (32 pairs)")
+	assert_eq(renderer._halo_lines.size(), 32, "BeamRenderer should have 32 halo lines")
+	assert_eq(renderer._core_lines.size(), 32, "BeamRenderer should have 32 core lines")
+
+	if renderer._halo_lines.size() > 0:
+		var halo: Line2D = renderer._halo_lines[0]
+		assert_eq(halo.width, GameConstants.BEAM_WIDTH, "Halo line width should equal GameConstants.BEAM_WIDTH (6.0)")
+		assert_true(halo.material is CanvasItemMaterial, "Halo line should use CanvasItemMaterial")
+		var mat: CanvasItemMaterial = halo.material as CanvasItemMaterial
+		assert_eq(mat.blend_mode, CanvasItemMaterial.BLEND_MODE_ADD, "Halo material blend mode should be BLEND_MODE_ADD")
+		assert_eq(halo.visible, false, "Pooled halo lines should initially be hidden")
+
+	if renderer._core_lines.size() > 0:
+		var core: Line2D = renderer._core_lines[0]
+		assert_eq(core.width, 2.0, "Core line width should be 2.0")
+		assert_eq(core.default_color, Color.WHITE, "Core line default color should be pure WHITE")
+		assert_eq(core.visible, false, "Pooled core lines should initially be hidden")
+
+	renderer.free()
+
+func test_beam_renderer_render_segments() -> void:
+	var renderer: BeamRenderer = BeamRenderer.new()
+	
+	var seg0 := BeamTypes.Segment.new(Vector2(0, 0), Vector2(100, 0), BeamTypes.RayColor.RED)
+	var seg1 := BeamTypes.Segment.new(Vector2(100, 0), Vector2(200, 100), BeamTypes.RayColor.BLUE)
+	var segments: Array[BeamTypes.Segment] = [seg0, seg1]
+
+	renderer.render_segments(segments)
+
+	# Verify active pair 0 (RED)
+	var halo0: Line2D = renderer._halo_lines[0]
+	var core0: Line2D = renderer._core_lines[0]
+	assert_eq(halo0.visible, true, "Active halo 0 should be visible")
+	assert_eq(core0.visible, true, "Active core 0 should be visible")
+	assert_eq(halo0.points.size(), 2, "Halo 0 points size should be 2")
+	assert_vector_approx(halo0.points[0], seg0.a, 0.001, "Halo 0 start point mismatch")
+	assert_vector_approx(halo0.points[1], seg0.b, 0.001, "Halo 0 end point mismatch")
+	assert_eq(halo0.default_color, BeamRenderer.COLOR_PALETTE[BeamTypes.RayColor.RED], "Halo 0 color should match RED palette")
+	assert_eq(core0.default_color, Color.WHITE, "Core 0 color should remain pure white")
+
+	# Verify active pair 1 (BLUE)
+	var halo1: Line2D = renderer._halo_lines[1]
+	var core1: Line2D = renderer._core_lines[1]
+	assert_eq(halo1.visible, true, "Active halo 1 should be visible")
+	assert_eq(core1.visible, true, "Active core 1 should be visible")
+	assert_eq(halo1.default_color, BeamRenderer.COLOR_PALETTE[BeamTypes.RayColor.BLUE], "Halo 1 color should match BLUE palette")
+
+	# Verify pair 2 remains hidden
+	var halo2: Line2D = renderer._halo_lines[2]
+	var core2: Line2D = renderer._core_lines[2]
+	assert_eq(halo2.visible, false, "Inactive halo 2 should be hidden")
+	assert_eq(core2.visible, false, "Inactive core 2 should be hidden")
+
+	renderer.free()
+
+func test_beam_renderer_surplus_hiding() -> void:
+	var renderer: BeamRenderer = BeamRenderer.new()
+	
+	# Render 3 segments first
+	var segs: Array[BeamTypes.Segment] = [
+		BeamTypes.Segment.new(Vector2.ZERO, Vector2(50, 0), BeamTypes.RayColor.WHITE),
+		BeamTypes.Segment.new(Vector2(50, 0), Vector2(100, 0), BeamTypes.RayColor.GREEN),
+		BeamTypes.Segment.new(Vector2(100, 0), Vector2(150, 0), BeamTypes.RayColor.RED),
+	]
+	renderer.render_segments(segs)
+	assert_eq(renderer._halo_lines[2].visible, true, "Halo 2 should be visible when 3 segments rendered")
+
+	# Now re-render with only 1 segment
+	var single_seg: Array[BeamTypes.Segment] = [
+		BeamTypes.Segment.new(Vector2.ZERO, Vector2(50, 0), BeamTypes.RayColor.WHITE),
+	]
+	renderer.render_segments(single_seg)
+	assert_eq(renderer._halo_lines[0].visible, true, "Halo 0 should be visible")
+	assert_eq(renderer._halo_lines[1].visible, false, "Halo 1 should be hidden after count reduction")
+	assert_eq(renderer._halo_lines[2].visible, false, "Halo 2 should be hidden after count reduction")
+
+	renderer.free()
+
+func test_beam_renderer_zero_allocations() -> void:
+	var renderer: BeamRenderer = BeamRenderer.new()
+	renderer._init_pool()
+	var initial_child_count: int = renderer.get_child_count()
+	assert_eq(initial_child_count, 64, "Initial child count should be 64")
+
+	# Render various segment lists repeatedly
+	for cycle in range(5):
+		var segs: Array[BeamTypes.Segment] = []
+		for s in range(cycle + 1):
+			segs.append(BeamTypes.Segment.new(Vector2(s * 10, 0), Vector2((s + 1) * 10, 0), BeamTypes.RayColor.WHITE))
+		renderer.render_segments(segs)
+
+	assert_eq(renderer.get_child_count(), initial_child_count, "Child count must remain constant across render_segments calls")
+	renderer.free()
 
 # --- M0 Regression Tests ---
 
