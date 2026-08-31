@@ -4,6 +4,7 @@ const GameConstants = preload("res://core/constants.gd")
 const BeamTypes = preload("res://core/beam_types.gd")
 const BeamTracer = preload("res://core/beam_tracer.gd")
 const BeamRenderer = preload("res://scenes/fx/beam_renderer.gd")
+const LightSource = preload("res://scenes/objects/light_source.gd")
 
 var _passed_count: int = 0
 var _failed_count: int = 0
@@ -258,7 +259,6 @@ func test_beam_renderer_render_segments() -> void:
 
 	renderer.render_segments(segments)
 
-	# Verify active pair 0 (RED)
 	var halo0: Line2D = renderer._halo_lines[0]
 	var core0: Line2D = renderer._core_lines[0]
 	assert_eq(halo0.visible, true, "Active halo 0 should be visible")
@@ -269,14 +269,12 @@ func test_beam_renderer_render_segments() -> void:
 	assert_eq(halo0.default_color, BeamRenderer.COLOR_PALETTE[BeamTypes.RayColor.RED], "Halo 0 color should match RED palette")
 	assert_eq(core0.default_color, Color.WHITE, "Core 0 color should remain pure white")
 
-	# Verify active pair 1 (BLUE)
 	var halo1: Line2D = renderer._halo_lines[1]
 	var core1: Line2D = renderer._core_lines[1]
 	assert_eq(halo1.visible, true, "Active halo 1 should be visible")
 	assert_eq(core1.visible, true, "Active core 1 should be visible")
 	assert_eq(halo1.default_color, BeamRenderer.COLOR_PALETTE[BeamTypes.RayColor.BLUE], "Halo 1 color should match BLUE palette")
 
-	# Verify pair 2 remains hidden
 	var halo2: Line2D = renderer._halo_lines[2]
 	var core2: Line2D = renderer._core_lines[2]
 	assert_eq(halo2.visible, false, "Inactive halo 2 should be hidden")
@@ -287,7 +285,6 @@ func test_beam_renderer_render_segments() -> void:
 func test_beam_renderer_surplus_hiding() -> void:
 	var renderer: BeamRenderer = BeamRenderer.new()
 	
-	# Render 3 segments first
 	var segs: Array[BeamTypes.Segment] = [
 		BeamTypes.Segment.new(Vector2.ZERO, Vector2(50, 0), BeamTypes.RayColor.WHITE),
 		BeamTypes.Segment.new(Vector2(50, 0), Vector2(100, 0), BeamTypes.RayColor.GREEN),
@@ -296,7 +293,6 @@ func test_beam_renderer_surplus_hiding() -> void:
 	renderer.render_segments(segs)
 	assert_eq(renderer._halo_lines[2].visible, true, "Halo 2 should be visible when 3 segments rendered")
 
-	# Now re-render with only 1 segment
 	var single_seg: Array[BeamTypes.Segment] = [
 		BeamTypes.Segment.new(Vector2.ZERO, Vector2(50, 0), BeamTypes.RayColor.WHITE),
 	]
@@ -313,7 +309,6 @@ func test_beam_renderer_zero_allocations() -> void:
 	var initial_child_count: int = renderer.get_child_count()
 	assert_eq(initial_child_count, 64, "Initial child count should be 64")
 
-	# Render various segment lists repeatedly
 	for cycle in range(5):
 		var segs: Array[BeamTypes.Segment] = []
 		for s in range(cycle + 1):
@@ -322,6 +317,59 @@ func test_beam_renderer_zero_allocations() -> void:
 
 	assert_eq(renderer.get_child_count(), initial_child_count, "Child count must remain constant across render_segments calls")
 	renderer.free()
+
+# --- Unit Tests for LightSource (M1 Issue 04) ---
+
+func test_light_source_defaults() -> void:
+	var light_source: LightSource = LightSource.new()
+	assert_eq(light_source.beam_color, BeamTypes.RayColor.WHITE, "LightSource default beam_color should be WHITE")
+	assert_eq(light_source.emission_offset, LightSource.DEFAULT_EMISSION_OFFSET, "LightSource default emission_offset should match DEFAULT_EMISSION_OFFSET")
+	light_source.free()
+
+func test_light_source_emission_direction() -> void:
+	var light_source: LightSource = LightSource.new()
+	
+	light_source.rotation = 0.0
+	assert_vector_approx(light_source.get_emission_direction(), Vector2.RIGHT, 0.001, "Emission direction at rot 0 should be Vector2.RIGHT")
+
+	light_source.rotation = PI / 2.0
+	assert_vector_approx(light_source.get_emission_direction(), Vector2.DOWN, 0.001, "Emission direction at rot 90deg should be Vector2.DOWN")
+
+	light_source.rotation = PI
+	assert_vector_approx(light_source.get_emission_direction(), Vector2.LEFT, 0.001, "Emission direction at rot 180deg should be Vector2.LEFT")
+
+	light_source.rotation = -PI / 2.0
+	assert_vector_approx(light_source.get_emission_direction(), Vector2.UP, 0.001, "Emission direction at rot -90deg should be Vector2.UP")
+
+	light_source.free()
+
+func test_light_source_emission_origin() -> void:
+	var light_source: LightSource = LightSource.new()
+	light_source.position = Vector2(100.0, 200.0)
+	
+	light_source.rotation = 0.0
+	assert_vector_approx(light_source.get_emission_origin(), Vector2(124.0, 200.0), 0.001, "Emission origin at rot 0 mismatch")
+
+	light_source.rotation = PI / 2.0
+	assert_vector_approx(light_source.get_emission_origin(), Vector2(100.0, 224.0), 0.001, "Emission origin at rot 90deg mismatch")
+
+	light_source.emission_offset = 30.0
+	light_source.rotation = 0.0
+	assert_vector_approx(light_source.get_emission_origin(), Vector2(130.0, 200.0), 0.001, "Emission origin with custom offset mismatch")
+
+	light_source.free()
+
+func test_light_source_scene_instantiation() -> void:
+	var scene_res: PackedScene = load("res://scenes/objects/light_source.tscn")
+	assert_true(scene_res != null, "res://scenes/objects/light_source.tscn should load")
+	if scene_res != null:
+		var instance: Node = scene_res.instantiate()
+		assert_true(instance is LightSource, "Scene root should be instance of LightSource")
+		var body_visual: Node = instance.get_node_or_null("BodyVisual")
+		assert_true(body_visual != null, "LightSource scene should have BodyVisual node")
+		var nozzle_visual: Node = instance.get_node_or_null("NozzleVisual")
+		assert_true(nozzle_visual != null, "LightSource scene should have NozzleVisual node")
+		instance.free()
 
 # --- M0 Regression Tests ---
 
