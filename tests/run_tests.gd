@@ -2,6 +2,7 @@ extends SceneTree
 
 const GameConstants = preload("res://core/constants.gd")
 const BeamTypes = preload("res://core/beam_types.gd")
+const BeamTracer = preload("res://core/beam_tracer.gd")
 
 var _passed_count: int = 0
 var _failed_count: int = 0
@@ -141,6 +142,87 @@ func test_assertion_utilities() -> void:
 	assert_true(true, "assert_true should succeed for true")
 	assert_eq(123, 123, "assert_eq should succeed for equal values")
 	assert_vector_approx(Vector2(1.0001, 2.0001), Vector2(1.0, 2.0), 0.01, "assert_vector_approx should succeed within tolerance")
+
+# --- Unit Tests for BeamTracer (M1 Issue 02) ---
+
+func test_beam_tracer_open_ray_hits_nothing() -> void:
+	var mock_cast := func(_origin: Vector2, _dir: Vector2, _exclude: Array[RID]) -> BeamTypes.RayHit:
+		return null
+	
+	var segments: Array[BeamTypes.Segment] = BeamTracer.trace(mock_cast, Vector2.ZERO, Vector2.RIGHT)
+	assert_eq(segments.size(), 1, "Open ray should produce exactly 1 segment")
+	if segments.size() > 0:
+		assert_vector_approx(segments[0].a, Vector2.ZERO, 0.001, "Open ray segment start should be origin")
+		assert_vector_approx(segments[0].b, Vector2(GameConstants.MAX_RAY_DISTANCE, 0.0), 0.001, "Open ray segment end should be origin + dir * MAX_RAY_DISTANCE")
+		assert_eq(segments[0].color, BeamTypes.RayColor.WHITE, "Open ray default color should be WHITE")
+
+	# Test with custom origin and color
+	var custom_origin := Vector2(100.0, 50.0)
+	var custom_dir := Vector2.DOWN
+	var red_segments: Array[BeamTypes.Segment] = BeamTracer.trace(mock_cast, custom_origin, custom_dir, BeamTypes.RayColor.RED)
+	assert_eq(red_segments.size(), 1, "Red open ray should produce 1 segment")
+	if red_segments.size() > 0:
+		assert_vector_approx(red_segments[0].a, custom_origin, 0.001, "Red ray start mismatch")
+		assert_vector_approx(red_segments[0].b, custom_origin + custom_dir * GameConstants.MAX_RAY_DISTANCE, 0.001, "Red ray end mismatch")
+		assert_eq(red_segments[0].color, BeamTypes.RayColor.RED, "Red ray color mismatch")
+
+func test_beam_tracer_ray_stops_on_wall() -> void:
+	var hit_point := Vector2(250.0, 0.0)
+	var mock_cast := func(_origin: Vector2, _dir: Vector2, _exclude: Array[RID]) -> BeamTypes.RayHit:
+		return BeamTypes.RayHit.new(
+			hit_point,
+			Vector2.LEFT,
+			BeamTypes.ColliderType.WALL,
+			null,
+			RID()
+		)
+	
+	var segments: Array[BeamTypes.Segment] = BeamTracer.trace(mock_cast, Vector2.ZERO, Vector2.RIGHT)
+	assert_eq(segments.size(), 1, "Wall hit should produce exactly 1 segment terminating at wall")
+	if segments.size() > 0:
+		assert_vector_approx(segments[0].a, Vector2.ZERO, 0.001, "Wall ray segment start should be origin")
+		assert_vector_approx(segments[0].b, hit_point, 0.001, "Wall ray segment end should be hit.point")
+		assert_eq(segments[0].color, BeamTypes.RayColor.WHITE, "Wall ray segment color should match incident color")
+
+func test_beam_tracer_max_bounces_limit() -> void:
+	var call_count: Array[int] = [0]
+	var mock_infinite_cast := func(origin: Vector2, dir: Vector2, _exclude: Array[RID]) -> BeamTypes.RayHit:
+		call_count[0] += 1
+		return BeamTypes.RayHit.new(
+			origin + dir * 50.0,
+			-dir,
+			BeamTypes.ColliderType.WALL,
+			null,
+			RID()
+		)
+	
+	var max_b: int = 5
+	var segments: Array[BeamTypes.Segment] = BeamTracer.trace(mock_infinite_cast, Vector2.ZERO, Vector2.RIGHT, BeamTypes.RayColor.BLUE, max_b)
+	assert_eq(call_count[0], 1, "Wall hit terminates ray tracing")
+	assert_eq(segments.size(), 1, "Should generate segment up to hit point")
+
+	# Test max_bounces = 0
+	var zero_segments: Array[BeamTypes.Segment] = BeamTracer.trace(mock_infinite_cast, Vector2.ZERO, Vector2.RIGHT, BeamTypes.RayColor.BLUE, 0)
+	assert_eq(zero_segments.size(), 0, "max_bounces = 0 should return empty segments")
+
+func test_beam_tracer_direction_normalized() -> void:
+	var mock_cast := func(_origin: Vector2, _dir: Vector2, _exclude: Array[RID]) -> BeamTypes.RayHit:
+		return null
+	
+	var unnormalized_dir := Vector2(100.0, 0.0)
+	var origin := Vector2(50.0, 50.0)
+	var segments: Array[BeamTypes.Segment] = BeamTracer.trace(mock_cast, origin, unnormalized_dir)
+	assert_eq(segments.size(), 1, "Unnormalized direction should still produce 1 segment")
+	if segments.size() > 0:
+		assert_vector_approx(segments[0].a, origin, 0.001, "Origin mismatch")
+		assert_vector_approx(segments[0].b, origin + Vector2.RIGHT * GameConstants.MAX_RAY_DISTANCE, 0.001, "Endpoint should use normalized direction")
+
+func test_beam_tracer_zero_direction() -> void:
+	var mock_cast := func(_origin: Vector2, _dir: Vector2, _exclude: Array[RID]) -> BeamTypes.RayHit:
+		return null
+	
+	var segments: Array[BeamTypes.Segment] = BeamTracer.trace(mock_cast, Vector2.ZERO, Vector2.ZERO)
+	assert_eq(segments.size(), 0, "Zero direction vector should produce empty segments")
 
 # --- M0 Regression Tests ---
 
