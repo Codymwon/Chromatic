@@ -23,6 +23,7 @@ const LevelBase = preload("res://scenes/level/level_base.gd")
 const LEVEL_BASE_SCENE: PackedScene = preload("res://scenes/level/level_base.tscn")
 const M4TestLevel = preload("res://scenes/level/m4_test_level.gd")
 const M4_LEVEL_SCENE: PackedScene = preload("res://scenes/level/m4_test_level.tscn")
+const TestTouchInteraction = preload("res://tests/test_touch_interaction.gd")
 
 class MockPrism extends RefCounted:
 	var rotation: float = 0.0
@@ -1949,6 +1950,26 @@ func test_level_base_process_lifecycle_win() -> void:
 	PhysicsServer2D.free_rid(b_shape)
 	PhysicsServer2D.free_rid(b_area)
 	level.free()
+
+# --- Integration Tests for Touch Interaction & Controls (Milestone 5) ---
+
+func test_touch_interaction_translation() -> void:
+	TestTouchInteraction.test_translation_mode_activation_and_offset(self)
+
+func test_touch_interaction_bounds_clamping() -> void:
+	TestTouchInteraction.test_playfield_boundary_clamping(self)
+
+func test_touch_interaction_rotation_and_snapping() -> void:
+	TestTouchInteraction.test_rotation_mode_and_snapping(self)
+
+func test_touch_interaction_cancels_win_hold() -> void:
+	TestTouchInteraction.test_interaction_cancels_win_hold(self)
+
+func test_touch_interaction_hud_and_reset() -> void:
+	TestTouchInteraction.test_hud_snap_toggle_and_level_reset(self)
+
+func test_touch_interaction_mouse_parity() -> void:
+	TestTouchInteraction.test_mouse_touch_emulation_parity(self)
 
 
 
