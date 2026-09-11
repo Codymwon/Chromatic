@@ -9,10 +9,19 @@ const Wall = preload("res://scenes/objects/wall.gd")
 const WALL_SCENE: PackedScene = preload("res://scenes/objects/wall.tscn")
 const Mirror = preload("res://scenes/objects/mirror.gd")
 const MIRROR_SCENE: PackedScene = preload("res://scenes/objects/mirror.tscn")
+const Prism = preload("res://scenes/objects/prism.gd")
+const PRISM_SCENE: PackedScene = preload("res://scenes/objects/prism.tscn")
 const M1TestLevel = preload("res://scenes/level/m1_test_level.gd")
 const M1_LEVEL_SCENE: PackedScene = preload("res://scenes/level/m1_test_level.tscn")
 const M2TestLevel = preload("res://scenes/level/m2_test_level.gd")
 const M2_LEVEL_SCENE: PackedScene = preload("res://scenes/level/m2_test_level.tscn")
+const M3TestLevel = preload("res://scenes/level/m3_test_level.gd")
+const M3_LEVEL_SCENE: PackedScene = preload("res://scenes/level/m3_test_level.tscn")
+
+class MockPrism extends RefCounted:
+	var rotation: float = 0.0
+	func _init(p_rot: float = 0.0) -> void:
+		rotation = p_rot
 
 var _passed_count: int = 0
 var _failed_count: int = 0
@@ -90,6 +99,21 @@ func assert_vector_approx(actual: Vector2, expected: Vector2, tolerance: float =
 		_failures.append(fail_msg)
 		printerr("  Assertion Failed: ", fail_msg)
 		return false
+
+func assert_float_approx(actual: float, expected: float, tolerance: float = 0.001, message: String = "") -> bool:
+	var diff: float = absf(actual - expected)
+	if diff <= tolerance:
+		_passed_count += 1
+		return true
+	else:
+		_failed_count += 1
+		var fail_msg := "%s: Expected float %f approx %f (diff %f > tol %f). %s" % [
+			_current_test_name, actual, expected, diff, tolerance, message
+		]
+		_failures.append(fail_msg)
+		printerr("  Assertion Failed: ", fail_msg)
+		return false
+
 
 # --- Smoke Tests for M1 Issue 01 ---
 
@@ -326,6 +350,50 @@ func test_beam_renderer_zero_allocations() -> void:
 	assert_eq(renderer.get_child_count(), initial_child_count, "Child count must remain constant across render_segments calls")
 	renderer.free()
 
+func test_beam_renderer_chromatic_palette_and_halo_modulation() -> void:
+	# Assert canonical palette definitions per M3-03
+	assert_eq(BeamRenderer.get_palette_color(BeamTypes.RayColor.WHITE), Color(1.0, 1.0, 1.0, 1.0), "WHITE palette match")
+	assert_eq(BeamRenderer.get_palette_color(BeamTypes.RayColor.RED), Color(1.0, 0.25, 0.25, 1.0), "RED palette match")
+	assert_eq(BeamRenderer.get_palette_color(BeamTypes.RayColor.GREEN), Color(0.25, 1.0, 0.35, 1.0), "GREEN palette match")
+	assert_eq(BeamRenderer.get_palette_color(BeamTypes.RayColor.BLUE), Color(0.25, 0.55, 1.0, 1.0), "BLUE palette match")
+
+	var renderer := BeamRenderer.new()
+	var segs: Array[BeamTypes.Segment] = [
+		BeamTypes.Segment.new(Vector2(0, 0), Vector2(100, 0), BeamTypes.RayColor.WHITE),
+		BeamTypes.Segment.new(Vector2(100, 0), Vector2(200, 0), BeamTypes.RayColor.RED),
+		BeamTypes.Segment.new(Vector2(200, 0), Vector2(300, 0), BeamTypes.RayColor.GREEN),
+		BeamTypes.Segment.new(Vector2(300, 0), Vector2(400, 0), BeamTypes.RayColor.BLUE),
+	]
+
+	renderer.render_segments(segs)
+
+	for i in range(4):
+		assert_eq(renderer._halo_lines[i].visible, true, "Halo %d should be visible" % i)
+		assert_eq(renderer._core_lines[i].visible, true, "Core %d should be visible" % i)
+		assert_eq(renderer._core_lines[i].default_color, Color(1.0, 1.0, 1.0, 1.0), "Core %d must remain pure white" % i)
+
+	assert_eq(renderer._halo_lines[0].default_color, Color(1.0, 1.0, 1.0, 1.0), "Seg 0 halo should be WHITE")
+	assert_eq(renderer._halo_lines[1].default_color, Color(1.0, 0.25, 0.25, 1.0), "Seg 1 halo should be RED")
+	assert_eq(renderer._halo_lines[2].default_color, Color(0.25, 1.0, 0.35, 1.0), "Seg 2 halo should be GREEN")
+	assert_eq(renderer._halo_lines[3].default_color, Color(0.25, 0.55, 1.0, 1.0), "Seg 3 halo should be BLUE")
+	assert_eq(renderer._halo_lines[4].visible, false, "Halo 4 should be hidden")
+
+	# Mutate colors in-place to verify dynamic re-tinting without allocations
+	var mutated_segs: Array[BeamTypes.Segment] = [
+		BeamTypes.Segment.new(Vector2(0, 0), Vector2(100, 0), BeamTypes.RayColor.BLUE),
+		BeamTypes.Segment.new(Vector2(100, 0), Vector2(200, 0), BeamTypes.RayColor.GREEN),
+	]
+	renderer.render_segments(mutated_segs)
+
+	assert_eq(renderer._halo_lines[0].visible, true, "Halo 0 should be visible after mutation")
+	assert_eq(renderer._halo_lines[1].visible, true, "Halo 1 should be visible after mutation")
+	assert_eq(renderer._halo_lines[2].visible, false, "Halo 2 should now be hidden after mutation")
+	assert_eq(renderer._halo_lines[0].default_color, Color(0.25, 0.55, 1.0, 1.0), "Mutated seg 0 halo should now be BLUE")
+	assert_eq(renderer._halo_lines[1].default_color, Color(0.25, 1.0, 0.35, 1.0), "Mutated seg 1 halo should now be GREEN")
+
+	renderer.free()
+
+
 # --- Unit Tests for LightSource (M1 Issue 04) ---
 
 func test_light_source_defaults() -> void:
@@ -536,6 +604,43 @@ func test_mirror_properties_and_normal() -> void:
 
 	mirror.free()
 
+func test_prism_scene_instantiation() -> void:
+	var prism: Prism = PRISM_SCENE.instantiate() as Prism
+	assert_true(prism != null, "Prism scene should instantiate as Prism")
+	if prism != null:
+		assert_eq(prism.collision_layer, 4, "Prism should be on collision layer 4 (Layer 3: prisms)")
+		assert_eq(prism.collision_mask, 0, "Prism collision_mask should be 0")
+		var col_poly: CollisionPolygon2D = prism.get_node_or_null("CollisionPolygon2D") as CollisionPolygon2D
+		assert_true(col_poly != null, "Prism should have CollisionPolygon2D")
+		if col_poly != null:
+			assert_eq(col_poly.polygon.size(), 3, "Prism collision polygon should have 3 vertices (triangle)")
+		var glass_body: Polygon2D = prism.get_node_or_null("GlassBody") as Polygon2D
+		assert_true(glass_body != null, "Prism should have GlassBody Polygon2D")
+		var refractive_core: Polygon2D = prism.get_node_or_null("RefractiveCore") as Polygon2D
+		assert_true(refractive_core != null, "Prism should have RefractiveCore Polygon2D")
+		var glass_border: Line2D = prism.get_node_or_null("GlassBorder") as Line2D
+		assert_true(glass_border != null, "Prism should have GlassBorder Line2D")
+		prism.free()
+
+func test_prism_properties() -> void:
+	var prism: Prism = Prism.new()
+	assert_eq(prism.collider_type, BeamTypes.ColliderType.PRISM, "Prism collider_type should be PRISM")
+	prism._ready()
+	assert_eq(prism.collision_layer, 4, "Prism should default to collision layer 4 (Layer 3: prisms)")
+	assert_eq(prism.collision_mask, 0, "Prism should default to collision mask 0")
+
+	var signal_emitted: Array[bool] = [false]
+	prism.transformed.connect(func(): signal_emitted[0] = true)
+	prism.rotation = 0.5
+	prism._notification(CanvasItem.NOTIFICATION_TRANSFORM_CHANGED)
+	assert_true(signal_emitted[0], "Prism should emit transformed signal upon transform change")
+
+	prism.rotation = deg_to_rad(45.0)
+	assert_float_approx(prism.rotation, deg_to_rad(45.0), 0.0001, "Prism rotation should update cleanly")
+
+	prism.free()
+
+
 func test_mirror_90_degree_reflection() -> void:
 	# Ray travelling RIGHT hits a -45° mirror (reflecting UP)
 	var mirror_normal_neg := Vector2.UP.rotated(deg_to_rad(-45.0)).normalized()
@@ -700,6 +805,168 @@ func test_parallel_mirrors_infinite_loop_safety() -> void:
 
 	var segments: Array[BeamTypes.Segment] = BeamTracer.trace(fake_cast, Vector2.ZERO, Vector2.RIGHT)
 	assert_eq(segments.size(), GameConstants.MAX_BOUNCES, "Parallel mirrors must safely terminate at exactly MAX_BOUNCES (24)")
+
+# --- Unit Tests for Prism Splitting & Pass-Through (M3 Issue 02) ---
+
+func test_prism_splits_white_to_fixed_rgb_fan() -> void:
+	# Hit prism rotated at 90 degrees from an arbitrary 37 degree incident angle
+	var prism_rot := deg_to_rad(90.0)
+	var fake_cast := func(origin: Vector2, _dir: Vector2, _exclude: Array[RID]) -> BeamTypes.RayHit:
+		if origin == Vector2.ZERO:
+			var hit := BeamTypes.RayHit.new()
+			hit.point = Vector2(100, 0)
+			hit.collider_type = BeamTypes.ColliderType.PRISM
+			hit.collider = MockPrism.new(prism_rot)
+			return hit
+		return null
+
+	var in_dir := Vector2.from_angle(deg_to_rad(37.0))
+	var segments: Array[BeamTypes.Segment] = BeamTracer.trace(fake_cast, Vector2.ZERO, in_dir, BeamTypes.RayColor.WHITE)
+	assert_eq(segments.size(), 4, "White ray hitting prism should produce 4 segments (1 incident + 3 split)")
+	if segments.size() == 4:
+		# Incident ray
+		assert_eq(segments[0].color, BeamTypes.RayColor.WHITE, "Incident segment must be WHITE")
+		assert_vector_approx(segments[0].a, Vector2.ZERO, 0.001, "Incident start mismatch")
+		assert_vector_approx(segments[0].b, Vector2(100, 0), 0.001, "Incident end must be hit point")
+
+		# Red ray (-12 deg from 90 deg = 78 deg)
+		assert_eq(segments[1].color, BeamTypes.RayColor.RED, "First split segment must be RED")
+		var expected_red_dir := Vector2.from_angle(deg_to_rad(78.0)).normalized()
+		var red_dir := (segments[1].b - segments[1].a).normalized()
+		assert_vector_approx(red_dir, expected_red_dir, 0.001, "Red fan angle mismatch (-12 deg relative to prism)")
+		var expected_red_origin := Vector2(100, 0) + expected_red_dir * GameConstants.RAY_STEP_NUDGE
+		assert_vector_approx(segments[1].a, expected_red_origin, 0.001, "Red origin nudge mismatch")
+
+		# Green ray (0 deg from 90 deg = 90 deg)
+		assert_eq(segments[2].color, BeamTypes.RayColor.GREEN, "Second split segment must be GREEN")
+		var expected_green_dir := Vector2.from_angle(deg_to_rad(90.0)).normalized()
+		var green_dir := (segments[2].b - segments[2].a).normalized()
+		assert_vector_approx(green_dir, expected_green_dir, 0.001, "Green fan angle mismatch (0 deg relative to prism)")
+		var expected_green_origin := Vector2(100, 0) + expected_green_dir * GameConstants.RAY_STEP_NUDGE
+		assert_vector_approx(segments[2].a, expected_green_origin, 0.001, "Green origin nudge mismatch")
+
+		# Blue ray (+12 deg from 90 deg = 102 deg)
+		assert_eq(segments[3].color, BeamTypes.RayColor.BLUE, "Third split segment must be BLUE")
+		var expected_blue_dir := Vector2.from_angle(deg_to_rad(102.0)).normalized()
+		var blue_dir := (segments[3].b - segments[3].a).normalized()
+		assert_vector_approx(blue_dir, expected_blue_dir, 0.001, "Blue fan angle mismatch (+12 deg relative to prism)")
+		var expected_blue_origin := Vector2(100, 0) + expected_blue_dir * GameConstants.RAY_STEP_NUDGE
+		assert_vector_approx(segments[3].a, expected_blue_origin, 0.001, "Blue origin nudge mismatch")
+
+func test_prism_incidence_independence() -> void:
+	# Prism fixed at 45 degrees
+	var prism_rot := deg_to_rad(45.0)
+	var fake_cast := func(origin: Vector2, _dir: Vector2, _exclude: Array[RID]) -> BeamTypes.RayHit:
+		if origin == Vector2.ZERO:
+			var hit := BeamTypes.RayHit.new()
+			hit.point = Vector2(100, 50)
+			hit.collider_type = BeamTypes.ColliderType.PRISM
+			hit.collider = MockPrism.new(prism_rot)
+			return hit
+		return null
+
+	var directions: Array[Vector2] = [
+		Vector2.RIGHT,
+		Vector2.DOWN,
+		Vector2(1, -1).normalized(),
+		Vector2(-0.5, 0.866).normalized(),
+	]
+
+	var expected_red_dir := Vector2.from_angle(deg_to_rad(33.0)).normalized()
+	var expected_green_dir := Vector2.from_angle(deg_to_rad(45.0)).normalized()
+	var expected_blue_dir := Vector2.from_angle(deg_to_rad(57.0)).normalized()
+
+	for d in directions:
+		var segs: Array[BeamTypes.Segment] = BeamTracer.trace(fake_cast, Vector2.ZERO, d, BeamTypes.RayColor.WHITE)
+		assert_eq(segs.size(), 4, "Each trace must produce 4 segments")
+		if segs.size() == 4:
+			var r_dir: Vector2 = (segs[1].b - segs[1].a).normalized()
+			var g_dir: Vector2 = (segs[2].b - segs[2].a).normalized()
+			var b_dir: Vector2 = (segs[3].b - segs[3].a).normalized()
+			assert_vector_approx(r_dir, expected_red_dir, 0.001, "Red fan dir must remain invariant to incident angle")
+			assert_vector_approx(g_dir, expected_green_dir, 0.001, "Green fan dir must remain invariant to incident angle")
+			assert_vector_approx(b_dir, expected_blue_dir, 0.001, "Blue fan dir must remain invariant to incident angle")
+
+func test_colored_rays_pass_through_prism() -> void:
+	var prism_rot := deg_to_rad(60.0)
+	var fake_cast := func(origin: Vector2, _dir: Vector2, _exclude: Array[RID]) -> BeamTypes.RayHit:
+		if origin == Vector2.ZERO:
+			var hit := BeamTypes.RayHit.new()
+			hit.point = Vector2(100, 0)
+			hit.collider_type = BeamTypes.ColliderType.PRISM
+			hit.collider = MockPrism.new(prism_rot)
+			return hit
+		return null
+
+	var colors: Array[BeamTypes.RayColor] = [
+		BeamTypes.RayColor.RED,
+		BeamTypes.RayColor.GREEN,
+		BeamTypes.RayColor.BLUE,
+	]
+
+	for c in colors:
+		var in_dir := Vector2(1, 0.5).normalized()
+		var segs: Array[BeamTypes.Segment] = BeamTracer.trace(fake_cast, Vector2.ZERO, in_dir, c)
+		assert_eq(segs.size(), 2, "Monochromatic ray passing through prism must produce exactly 2 segments")
+		if segs.size() == 2:
+			assert_eq(segs[0].color, c, "Incident segment must retain color")
+			assert_eq(segs[1].color, c, "Pass-through segment must retain color without splitting")
+			var pass_dir: Vector2 = (segs[1].b - segs[1].a).normalized()
+			assert_vector_approx(pass_dir, in_dir, 0.001, "Pass-through direction must be unaltered")
+			var expected_pass_origin := Vector2(100, 0) + in_dir * GameConstants.RAY_STEP_NUDGE
+			assert_vector_approx(segs[1].a, expected_pass_origin, 0.001, "Pass-through origin must apply RAY_STEP_NUDGE")
+
+func test_split_colored_ray_mirror_reflection() -> void:
+	# White ray hits Prism at (100, 0) rotated at 0 deg -> Green ray continues RIGHT (0 deg)
+	# Downstream Mirror at (300, 0) rotated at 45 deg reflects Green ray DOWN
+	var prism_rot := 0.0
+	var mirror_norm := Vector2.UP.rotated(deg_to_rad(45.0)).normalized()
+
+	var fake_cast := func(origin: Vector2, dir: Vector2, _exclude: Array[RID]) -> BeamTypes.RayHit:
+		if origin == Vector2.ZERO:
+			# Hits prism at (100, 0)
+			var hit := BeamTypes.RayHit.new()
+			hit.point = Vector2(100, 0)
+			hit.collider_type = BeamTypes.ColliderType.PRISM
+			hit.collider = MockPrism.new(prism_rot)
+			return hit
+		elif origin.x > 99.0 and origin.x < 102.0 and absf(dir.y) < 0.001:
+			# Green ray (dir = RIGHT) hits mirror at (300, 0)
+			var hit := BeamTypes.RayHit.new()
+			hit.point = Vector2(300, 0)
+			hit.normal = mirror_norm
+			hit.collider_type = BeamTypes.ColliderType.MIRROR
+			return hit
+		return null
+
+	var segs: Array[BeamTypes.Segment] = BeamTracer.trace(fake_cast, Vector2.ZERO, Vector2.RIGHT, BeamTypes.RayColor.WHITE)
+	# Segments:
+	# 0: White (0, 0) -> (100, 0)
+	# 1: Red (100, 0) -> open space
+	# 2: Green (100, 0) -> (300, 0)
+	# 3: Green reflected off mirror at (300, 0) -> DOWN to open space
+	# 4: Blue (100, 0) -> open space
+	assert_eq(segs.size(), 5, "Prism split + downstream mirror reflection should produce 5 segments")
+	if segs.size() == 5:
+		assert_eq(segs[2].color, BeamTypes.RayColor.GREEN, "Segment hitting mirror must be GREEN")
+		assert_eq(segs[3].color, BeamTypes.RayColor.GREEN, "Reflected segment must preserve GREEN color")
+		var refl_dir: Vector2 = (segs[3].b - segs[3].a).normalized()
+		assert_vector_approx(refl_dir, Vector2.DOWN, 0.001, "Green ray reflected off 45 deg mirror must point DOWN")
+
+func test_prism_loop_safety_and_max_bounces() -> void:
+	# Opposing prisms/mirrors producing multiple bounces
+	var count: Array[int] = [0]
+	var fake_cast := func(origin: Vector2, dir: Vector2, _exclude: Array[RID]) -> BeamTypes.RayHit:
+		count[0] += 1
+		var hit := BeamTypes.RayHit.new()
+		hit.point = origin + dir * 50.0
+		hit.collider_type = BeamTypes.ColliderType.PRISM
+		hit.collider = MockPrism.new(0.0)
+		return hit
+
+	var segs: Array[BeamTypes.Segment] = BeamTracer.trace(fake_cast, Vector2.ZERO, Vector2.RIGHT, BeamTypes.RayColor.RED)
+	assert_eq(segs.size(), GameConstants.MAX_BOUNCES, "Prism pass-through recursion must safely terminate at MAX_BOUNCES")
+
 
 # --- Integration Tests for Multi-Mirror Test Level (M2 Issue 04) ---
 
@@ -883,6 +1150,216 @@ func test_m2_test_level_zero_allocations() -> void:
 
 	assert_eq(renderer.get_child_count(), initial_child_count, "BeamRenderer child count must remain constant (zero runtime allocations)")
 	level.free()
+
+# --- Integration Tests for Prism Test Level (M3 Issue 04) ---
+
+func test_m3_test_level_scene_structure() -> void:
+	var instance: Node = M3_LEVEL_SCENE.instantiate()
+	assert_true(instance != null, "M3 test level should instantiate")
+	if instance == null:
+		return
+
+	var renderer_node: Node = instance.get_node_or_null("BeamRenderer")
+	assert_true(renderer_node is BeamRenderer, "Level should contain BeamRenderer")
+
+	var light_source_node: Node = instance.get_node_or_null("LightSource")
+	assert_true(light_source_node is LightSource, "Level should contain LightSource")
+	if light_source_node is LightSource:
+		assert_vector_approx((light_source_node as LightSource).position, Vector2(200, 400), 0.001, "LightSource position mismatch")
+
+	var prism1_node: Node = instance.get_node_or_null("Prism1")
+	assert_true(prism1_node is Prism, "Level should contain Prism1")
+	if prism1_node is Prism:
+		assert_eq((prism1_node as Prism).collision_layer, 4, "Prism1 collision layer should be 4 (prisms)")
+		assert_vector_approx((prism1_node as Prism).position, Vector2(600, 400), 0.001, "Prism1 position mismatch")
+
+	var prism2_node: Node = instance.get_node_or_null("Prism2")
+	assert_true(prism2_node is Prism, "Level should contain Prism2")
+	if prism2_node is Prism:
+		assert_eq((prism2_node as Prism).collision_layer, 4, "Prism2 collision layer should be 4 (prisms)")
+		assert_vector_approx((prism2_node as Prism).position, Vector2(1000, 400), 0.001, "Prism2 position mismatch")
+
+	var mirror1_node: Node = instance.get_node_or_null("Mirror1")
+	assert_true(mirror1_node is Mirror, "Level should contain Mirror1")
+	if mirror1_node is Mirror:
+		assert_eq((mirror1_node as Mirror).collision_layer, 2, "Mirror1 collision layer should be 2")
+		assert_vector_approx((mirror1_node as Mirror).position, Vector2(1100, 510), 0.001, "Mirror1 position mismatch")
+
+	var wall_node: Node = instance.get_node_or_null("Wall")
+	assert_true(wall_node is Wall, "Level should contain Wall")
+	if wall_node is Wall:
+		assert_eq((wall_node as Wall).collision_layer, 1, "Wall collision layer should be 1")
+		assert_vector_approx((wall_node as Wall).position, Vector2(1400, 400), 0.001, "Wall position mismatch")
+
+	var p_top: Node = instance.get_node_or_null("PerimeterTop")
+	assert_true(p_top is Wall, "Level should contain PerimeterTop")
+	var p_bot: Node = instance.get_node_or_null("PerimeterBottom")
+	assert_true(p_bot is Wall, "Level should contain PerimeterBottom")
+	var p_left: Node = instance.get_node_or_null("PerimeterLeft")
+	assert_true(p_left is Wall, "Level should contain PerimeterLeft")
+	var p_right: Node = instance.get_node_or_null("PerimeterRight")
+	assert_true(p_right is Wall, "Level should contain PerimeterRight")
+
+	instance.free()
+
+func test_m3_test_level_dirty_flag() -> void:
+	var level: M3TestLevel = M3_LEVEL_SCENE.instantiate() as M3TestLevel
+	level._ready()
+	assert_eq(level.is_dirty, true, "Level should start in dirty state")
+	level._process(0.016)
+	assert_eq(level.is_dirty, false, "Level should clear dirty flag after process frame")
+
+	var p1: Prism = level.get_node("Prism1") as Prism
+	assert_true(p1 != null, "Prism1 should exist in level")
+	if p1 != null:
+		p1.rotation += 0.1
+		p1._notification(CanvasItem.NOTIFICATION_TRANSFORM_CHANGED)
+		assert_eq(level.is_dirty, true, "Rotating Prism1 in level should invalidate dirty state")
+
+	level._process(0.016)
+	assert_eq(level.is_dirty, false, "Level should clear dirty flag after re-process")
+
+	var p2: Prism = level.get_node("Prism2") as Prism
+	assert_true(p2 != null, "Prism2 should exist in level")
+	if p2 != null:
+		p2.position += Vector2(10, 0)
+		p2._notification(CanvasItem.NOTIFICATION_TRANSFORM_CHANGED)
+		assert_eq(level.is_dirty, true, "Moving Prism2 in level should invalidate dirty state")
+
+	level._process(0.016)
+	assert_eq(level.is_dirty, false, "Level should clear dirty flag after re-process")
+
+	var m1: Mirror = level.get_node("Mirror1") as Mirror
+	assert_true(m1 != null, "Mirror1 should exist in level")
+	if m1 != null:
+		m1.rotation += 0.1
+		m1._notification(CanvasItem.NOTIFICATION_TRANSFORM_CHANGED)
+		assert_eq(level.is_dirty, true, "Rotating Mirror1 in level should invalidate dirty state")
+
+	level.free()
+
+func test_m3_test_level_physics_dispersion_and_passthrough() -> void:
+	var level: M3TestLevel = M3_LEVEL_SCENE.instantiate() as M3TestLevel
+	var space: PhysicsDirectSpaceState2D = root.world_2d.direct_space_state
+
+	# Prism 1 in physics space at (600, 400) - Area2D on layer 4 (bit 3)
+	var prism1: Prism = Prism.new()
+	prism1.rotation = 0.0
+	var p1_area: RID = PhysicsServer2D.area_create()
+	PhysicsServer2D.area_set_space(p1_area, root.world_2d.space)
+	PhysicsServer2D.area_attach_object_instance_id(p1_area, prism1.get_instance_id())
+	var p1_shape: RID = PhysicsServer2D.rectangle_shape_create()
+	PhysicsServer2D.shape_set_data(p1_shape, Vector2(30.0, 30.0))
+	PhysicsServer2D.area_add_shape(p1_area, p1_shape, Transform2D(0.0, Vector2(600.0, 400.0)))
+	PhysicsServer2D.area_set_collision_layer(p1_area, 4)
+
+	# Prism 2 in physics space at (1000, 400) - Area2D on layer 4 (bit 3)
+	var prism2: Prism = Prism.new()
+	prism2.rotation = 0.0
+	var p2_area: RID = PhysicsServer2D.area_create()
+	PhysicsServer2D.area_set_space(p2_area, root.world_2d.space)
+	PhysicsServer2D.area_attach_object_instance_id(p2_area, prism2.get_instance_id())
+	var p2_shape: RID = PhysicsServer2D.rectangle_shape_create()
+	PhysicsServer2D.shape_set_data(p2_shape, Vector2(30.0, 30.0))
+	PhysicsServer2D.area_add_shape(p2_area, p2_shape, Transform2D(0.0, Vector2(1000.0, 400.0)))
+	PhysicsServer2D.area_set_collision_layer(p2_area, 4)
+
+	# Mirror 1 in physics space at (1100, 510) rotated 45° - StaticBody2D on layer 2 (bit 2)
+	var mirror1: Mirror = Mirror.new()
+	mirror1.rotation = deg_to_rad(45.0)
+	var m1_body: RID = PhysicsServer2D.body_create()
+	PhysicsServer2D.body_set_space(m1_body, root.world_2d.space)
+	PhysicsServer2D.body_attach_object_instance_id(m1_body, mirror1.get_instance_id())
+	var m1_shape: RID = PhysicsServer2D.rectangle_shape_create()
+	PhysicsServer2D.shape_set_data(m1_shape, Vector2(60.0, 8.0))
+	PhysicsServer2D.body_add_shape(m1_body, m1_shape, Transform2D(deg_to_rad(45.0), Vector2(1100.0, 510.0)))
+	PhysicsServer2D.body_set_collision_layer(m1_body, 2)
+
+	# Terminating Wall in physics space at (1400, 400) - StaticBody2D on layer 1 (bit 1)
+	var wall: Wall = Wall.new()
+	var wall_body: RID = PhysicsServer2D.body_create()
+	PhysicsServer2D.body_set_space(wall_body, root.world_2d.space)
+	PhysicsServer2D.body_attach_object_instance_id(wall_body, wall.get_instance_id())
+	var wall_shape: RID = PhysicsServer2D.rectangle_shape_create()
+	PhysicsServer2D.shape_set_data(wall_shape, Vector2(20.0, 100.0))
+	PhysicsServer2D.body_add_shape(wall_body, wall_shape, Transform2D(0.0, Vector2(1400.0, 400.0)))
+	PhysicsServer2D.body_set_collision_layer(wall_body, 1)
+
+	var segments: Array[BeamTypes.Segment] = level.update_beam(space)
+
+	# Expect 6 segments:
+	# 0: White ray hitting Prism1
+	# 1: Red ray (-12 deg) from Prism1 into open space
+	# 2: Green ray (0 deg) from Prism1 hitting Prism2
+	# 3: Green ray passing through Prism2 hitting Wall
+	# 4: Blue ray (+12 deg) from Prism1 hitting Mirror1
+	# 5: Blue ray reflected off Mirror1 with preserved BLUE color
+	assert_eq(segments.size(), 6, "Dispersion, pass-through, and mirror reflection should produce exactly 6 segments")
+
+	if segments.size() >= 6:
+		# Segment 0: White ray hitting Prism 1
+		assert_eq(segments[0].color, BeamTypes.RayColor.WHITE, "Seg 0 must be WHITE")
+		assert_vector_approx(segments[0].a, Vector2(224.0, 400.0), 0.001, "Seg 0 start mismatch")
+		assert_vector_approx(segments[0].b, Vector2(570.0, 400.0), 5.0, "Seg 0 should hit Prism1 left edge")
+
+		# Segment 1: Red ray (-12 deg) into open space
+		assert_eq(segments[1].color, BeamTypes.RayColor.RED, "Seg 1 must be RED")
+		var r_dir: Vector2 = (segments[1].b - segments[1].a).normalized()
+		assert_vector_approx(r_dir, Vector2.from_angle(deg_to_rad(-12.0)), 0.001, "Red ray direction mismatch")
+
+		# Segment 2: Green ray (0 deg) hitting Prism 2
+		assert_eq(segments[2].color, BeamTypes.RayColor.GREEN, "Seg 2 must be GREEN")
+		assert_vector_approx(segments[2].b, Vector2(970.0, 400.0), 5.0, "Seg 2 should hit Prism2 left edge")
+		var g_dir1: Vector2 = (segments[2].b - segments[2].a).normalized()
+		assert_vector_approx(g_dir1, Vector2.RIGHT, 0.001, "Green ray to Prism2 direction mismatch")
+
+		# Segment 3: Green ray passing through Prism 2 hitting Wall
+		assert_eq(segments[3].color, BeamTypes.RayColor.GREEN, "Seg 3 must be GREEN pass-through")
+		assert_vector_approx(segments[3].b, Vector2(1380.0, 400.0), 5.0, "Seg 3 should terminate at Wall")
+		var g_dir2: Vector2 = (segments[3].b - segments[3].a).normalized()
+		assert_vector_approx(g_dir2, Vector2.RIGHT, 0.001, "Green pass-through direction mismatch")
+
+		# Segment 4: Blue ray (+12 deg) hitting Mirror1
+		assert_eq(segments[4].color, BeamTypes.RayColor.BLUE, "Seg 4 must be BLUE")
+		assert_vector_approx(segments[4].b, Vector2(1100.0, 510.0), 15.0, "Seg 4 should hit Mirror1 near (1100, 510)")
+
+		# Segment 5: Blue ray reflected off Mirror 1
+		assert_eq(segments[5].color, BeamTypes.RayColor.BLUE, "Seg 5 reflected ray must preserve BLUE color")
+		var in_blue_dir: Vector2 = Vector2.from_angle(deg_to_rad(12.0)).normalized()
+		var m1_norm: Vector2 = Vector2.UP.rotated(deg_to_rad(45.0)).normalized()
+		var expected_refl_dir: Vector2 = (in_blue_dir - 2.0 * in_blue_dir.dot(m1_norm) * m1_norm).normalized()
+		var out_blue_dir: Vector2 = (segments[5].b - segments[5].a).normalized()
+		assert_vector_approx(out_blue_dir, expected_refl_dir, 0.01, "Reflected Blue ray direction mismatch")
+
+	# Clean up physics server resources
+	PhysicsServer2D.free_rid(p1_shape)
+	PhysicsServer2D.free_rid(p1_area)
+	PhysicsServer2D.free_rid(p2_shape)
+	PhysicsServer2D.free_rid(p2_area)
+	PhysicsServer2D.free_rid(m1_shape)
+	PhysicsServer2D.free_rid(m1_body)
+	PhysicsServer2D.free_rid(wall_shape)
+	PhysicsServer2D.free_rid(wall_body)
+	prism1.free()
+	prism2.free()
+	mirror1.free()
+	wall.free()
+	level.free()
+
+func test_m3_test_level_zero_allocations() -> void:
+	var level: M3TestLevel = M3_LEVEL_SCENE.instantiate() as M3TestLevel
+	var space: PhysicsDirectSpaceState2D = root.world_2d.direct_space_state
+	var renderer: BeamRenderer = level.get_node("BeamRenderer") as BeamRenderer
+	renderer._init_pool()
+	var initial_child_count: int = renderer.get_child_count()
+	assert_eq(initial_child_count, 64, "Initial pooled child count should be 64")
+
+	for i in range(10):
+		level.update_beam(space)
+
+	assert_eq(renderer.get_child_count(), initial_child_count, "BeamRenderer child count must remain constant (zero runtime allocations)")
+	level.free()
+
 
 # --- M0 Regression Tests ---
 

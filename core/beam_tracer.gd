@@ -1,5 +1,11 @@
 class_name BeamTracer
 
+const PRISM_FAN_COLORS: Array[BeamTypes.RayColor] = [
+	BeamTypes.RayColor.RED,
+	BeamTypes.RayColor.GREEN,
+	BeamTypes.RayColor.BLUE,
+]
+
 static func trace(
 	cast_fn: Callable,
 	origin: Vector2,
@@ -76,6 +82,48 @@ static func _trace_recursive(
 			next_exclude,
 			segments
 		)
+	elif hit.collider_type == BeamTypes.ColliderType.PRISM:
+		# Exclusion RID: explicitly ignore hit body to prevent outgoing rays from
+		# immediately colliding with their emitter body (CONTEXT.md).
+		var next_exclude: Array[RID] = []
+		if hit.rid.is_valid():
+			next_exclude.append(hit.rid)
+
+		if color == BeamTypes.RayColor.WHITE:
+			var prism_rotation: float = 0.0
+			if hit.collider != null and "rotation" in hit.collider:
+				prism_rotation = hit.collider.rotation
+			elif not hit.normal.is_zero_approx():
+				prism_rotation = hit.normal.angle()
+
+			var half_angle_rad: float = deg_to_rad(GameConstants.PRISM_HALF_ANGLE_DEG)
+			for i in range(3):
+				var fan_color: BeamTypes.RayColor = PRISM_FAN_COLORS[i]
+				var offset_rad: float = float(i - 1) * half_angle_rad
+				var fan_dir: Vector2 = Vector2.from_angle(prism_rotation + offset_rad).normalized()
+				var fan_origin: Vector2 = hit.point + fan_dir * GameConstants.RAY_STEP_NUDGE
+
+				_trace_recursive(
+					cast_fn,
+					fan_origin,
+					fan_dir,
+					fan_color,
+					bounces_remaining - 1,
+					next_exclude,
+					segments
+				)
+		else:
+			# Colored ray passes straight through without deflection or re-splitting
+			var pass_origin: Vector2 = hit.point + direction * GameConstants.RAY_STEP_NUDGE
+			_trace_recursive(
+				cast_fn,
+				pass_origin,
+				direction,
+				color,
+				bounces_remaining - 1,
+				next_exclude,
+				segments
+			)
 	else:
 		# Default termination for unhandled or absorbing collision
 		return
