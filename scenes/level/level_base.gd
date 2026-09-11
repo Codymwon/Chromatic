@@ -29,6 +29,7 @@ const MAX_GRAB_RADIUS: float = 48.0
 @onready var beam_renderer: BeamRenderer = get_node_or_null("BeamRenderer") as BeamRenderer
 @onready var objects_container: Node2D = get_node_or_null("Objects") as Node2D
 @onready var hud: Node = get_node_or_null("HUD")
+@onready var win_overlay: Node = get_node_or_null("WinOverlay")
 
 var is_dirty: bool = true
 var is_completed: bool = false
@@ -55,7 +56,36 @@ func get_beam_renderer() -> BeamRenderer:
 func _ready() -> void:
 	_connect_object_signals()
 	_connect_hud_signals()
+	_connect_win_overlay_signals()
 	mark_dirty()
+
+func _connect_win_overlay_signals() -> void:
+	if win_overlay == null:
+		win_overlay = get_node_or_null("WinOverlay")
+	if win_overlay != null:
+		if win_overlay.has_signal("next_level_pressed") and not win_overlay.next_level_pressed.is_connected(_on_win_overlay_next_level):
+			win_overlay.next_level_pressed.connect(_on_win_overlay_next_level)
+		if win_overlay.has_signal("replay_pressed") and not win_overlay.replay_pressed.is_connected(_on_win_overlay_replay):
+			win_overlay.replay_pressed.connect(_on_win_overlay_replay)
+		if win_overlay.has_signal("level_select_pressed") and not win_overlay.level_select_pressed.is_connected(_on_win_overlay_level_select):
+			win_overlay.level_select_pressed.connect(_on_win_overlay_level_select)
+
+func _on_win_overlay_next_level() -> void:
+	var lm: Node = null
+	if is_inside_tree() and get_tree() != null and get_tree().root != null:
+		lm = get_tree().root.get_node_or_null("LevelManager")
+	if lm != null and lm.has_next_level():
+		lm.load_next_level()
+		load_level(lm.get_current_level_data())
+
+func _on_win_overlay_replay() -> void:
+	if not current_level_dict.is_empty():
+		load_level(current_level_dict)
+	else:
+		reset_level()
+
+func _on_win_overlay_level_select() -> void:
+	pass
 
 func _connect_hud_signals() -> void:
 	if hud == null:
@@ -355,8 +385,31 @@ func _evaluate_win_condition(delta: float) -> void:
 		if win_hold_elapsed >= GameConstants.WIN_HOLD_TIME:
 			is_completed = true
 			level_completed.emit()
+			_show_win_modal()
 	else:
 		win_hold_elapsed = 0.0
+
+func _show_win_modal() -> void:
+	if win_overlay == null:
+		win_overlay = get_node_or_null("WinOverlay")
+	if win_overlay == null:
+		return
+
+	var lm: Node = null
+	if is_inside_tree() and get_tree() != null and get_tree().root != null:
+		lm = get_tree().root.get_node_or_null("LevelManager")
+
+	var lvl_title: String = current_level_dict.get("title", "Level Complete")
+	var is_last: bool = false
+
+	if lm != null:
+		lm.complete_current_level()
+		var cur_data: Dictionary = lm.get_current_level_data()
+		if not cur_data.is_empty():
+			lvl_title = cur_data.get("title", lvl_title)
+		is_last = not lm.has_next_level()
+
+	win_overlay.show_victory(lvl_title, is_last)
 
 func _get_objects_children() -> Array[Node]:
 	var container: Node = get_objects_container()
