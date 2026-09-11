@@ -124,6 +124,11 @@ static func _trace_recursive(
 				next_exclude,
 				segments
 			)
+	elif hit.collider_type == BeamTypes.ColliderType.SINK:
+		# Goal Sink terminates all incident light
+		if hit.collider != null and hit.collider.has_method("notify_beam_hit"):
+			hit.collider.notify_beam_hit(color)
+		return
 	else:
 		# Default termination for unhandled or absorbing collision
 		return
