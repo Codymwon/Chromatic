@@ -9,6 +9,8 @@ const Wall = preload("res://scenes/objects/wall.gd")
 const WALL_SCENE: PackedScene = preload("res://scenes/objects/wall.tscn")
 const Mirror = preload("res://scenes/objects/mirror.gd")
 const MIRROR_SCENE: PackedScene = preload("res://scenes/objects/mirror.tscn")
+const Prism = preload("res://scenes/objects/prism.gd")
+const PRISM_SCENE: PackedScene = preload("res://scenes/objects/prism.tscn")
 const M1TestLevel = preload("res://scenes/level/m1_test_level.gd")
 const M1_LEVEL_SCENE: PackedScene = preload("res://scenes/level/m1_test_level.tscn")
 const M2TestLevel = preload("res://scenes/level/m2_test_level.gd")
@@ -90,6 +92,21 @@ func assert_vector_approx(actual: Vector2, expected: Vector2, tolerance: float =
 		_failures.append(fail_msg)
 		printerr("  Assertion Failed: ", fail_msg)
 		return false
+
+func assert_float_approx(actual: float, expected: float, tolerance: float = 0.001, message: String = "") -> bool:
+	var diff: float = absf(actual - expected)
+	if diff <= tolerance:
+		_passed_count += 1
+		return true
+	else:
+		_failed_count += 1
+		var fail_msg := "%s: Expected float %f approx %f (diff %f > tol %f). %s" % [
+			_current_test_name, actual, expected, diff, tolerance, message
+		]
+		_failures.append(fail_msg)
+		printerr("  Assertion Failed: ", fail_msg)
+		return false
+
 
 # --- Smoke Tests for M1 Issue 01 ---
 
@@ -535,6 +552,43 @@ func test_mirror_properties_and_normal() -> void:
 	assert_vector_approx(mirror.get_facing_normal(), expected_45, 0.001, "Normal at rot 45deg mismatch")
 
 	mirror.free()
+
+func test_prism_scene_instantiation() -> void:
+	var prism: Prism = PRISM_SCENE.instantiate() as Prism
+	assert_true(prism != null, "Prism scene should instantiate as Prism")
+	if prism != null:
+		assert_eq(prism.collision_layer, 4, "Prism should be on collision layer 4 (Layer 3: prisms)")
+		assert_eq(prism.collision_mask, 0, "Prism collision_mask should be 0")
+		var col_poly: CollisionPolygon2D = prism.get_node_or_null("CollisionPolygon2D") as CollisionPolygon2D
+		assert_true(col_poly != null, "Prism should have CollisionPolygon2D")
+		if col_poly != null:
+			assert_eq(col_poly.polygon.size(), 3, "Prism collision polygon should have 3 vertices (triangle)")
+		var glass_body: Polygon2D = prism.get_node_or_null("GlassBody") as Polygon2D
+		assert_true(glass_body != null, "Prism should have GlassBody Polygon2D")
+		var refractive_core: Polygon2D = prism.get_node_or_null("RefractiveCore") as Polygon2D
+		assert_true(refractive_core != null, "Prism should have RefractiveCore Polygon2D")
+		var glass_border: Line2D = prism.get_node_or_null("GlassBorder") as Line2D
+		assert_true(glass_border != null, "Prism should have GlassBorder Line2D")
+		prism.free()
+
+func test_prism_properties() -> void:
+	var prism: Prism = Prism.new()
+	assert_eq(prism.collider_type, BeamTypes.ColliderType.PRISM, "Prism collider_type should be PRISM")
+	prism._ready()
+	assert_eq(prism.collision_layer, 4, "Prism should default to collision layer 4 (Layer 3: prisms)")
+	assert_eq(prism.collision_mask, 0, "Prism should default to collision mask 0")
+
+	var signal_emitted: Array[bool] = [false]
+	prism.transformed.connect(func(): signal_emitted[0] = true)
+	prism.rotation = 0.5
+	prism._notification(CanvasItem.NOTIFICATION_TRANSFORM_CHANGED)
+	assert_true(signal_emitted[0], "Prism should emit transformed signal upon transform change")
+
+	prism.rotation = deg_to_rad(45.0)
+	assert_float_approx(prism.rotation, deg_to_rad(45.0), 0.0001, "Prism rotation should update cleanly")
+
+	prism.free()
+
 
 func test_mirror_90_degree_reflection() -> void:
 	# Ray travelling RIGHT hits a -45° mirror (reflecting UP)
