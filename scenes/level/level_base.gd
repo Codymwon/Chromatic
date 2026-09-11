@@ -2,6 +2,7 @@ class_name LevelBase
 extends Node2D
 
 signal level_completed
+signal level_select_requested
 
 const BeamTypes = preload("res://core/beam_types.gd")
 const GameConstants = preload("res://core/constants.gd")
@@ -12,6 +13,9 @@ const Mirror = preload("res://scenes/objects/mirror.gd")
 const Prism = preload("res://scenes/objects/prism.gd")
 const GoalSink = preload("res://scenes/objects/goal_sink.gd")
 const Wall = preload("res://scenes/objects/wall.gd")
+const HUD = preload("res://scenes/ui/hud.gd")
+const WinOverlay = preload("res://scenes/ui/win_overlay.gd")
+const LevelManagerNode = preload("res://autoload/level_manager.gd")
 
 const LIGHT_SOURCE_SCENE: PackedScene = preload("res://scenes/objects/light_source.tscn")
 const MIRROR_SCENE: PackedScene = preload("res://scenes/objects/mirror.tscn")
@@ -28,8 +32,8 @@ const MAX_GRAB_RADIUS: float = 48.0
 
 @onready var beam_renderer: BeamRenderer = get_node_or_null("BeamRenderer") as BeamRenderer
 @onready var objects_container: Node2D = get_node_or_null("Objects") as Node2D
-@onready var hud: Node = get_node_or_null("HUD")
-@onready var win_overlay: Node = get_node_or_null("WinOverlay")
+@onready var hud: HUD = get_node_or_null("HUD") as HUD
+@onready var win_overlay: WinOverlay = get_node_or_null("WinOverlay") as WinOverlay
 
 var is_dirty: bool = true
 var is_completed: bool = false
@@ -70,11 +74,15 @@ func _connect_win_overlay_signals() -> void:
 		if win_overlay.has_signal("level_select_pressed") and not win_overlay.level_select_pressed.is_connected(_on_win_overlay_level_select):
 			win_overlay.level_select_pressed.connect(_on_win_overlay_level_select)
 
-func _on_win_overlay_next_level() -> void:
-	var lm: Node = null
+func _get_level_manager() -> LevelManagerNode:
 	if is_inside_tree() and get_tree() != null and get_tree().root != null:
-		lm = get_tree().root.get_node_or_null("LevelManager")
+		return get_tree().root.get_node_or_null("LevelManager") as LevelManagerNode
+	return null
+
+func _on_win_overlay_next_level() -> void:
+	var lm: LevelManagerNode = _get_level_manager()
 	if lm != null and lm.has_next_level():
+		lm.complete_current_level()
 		lm.load_next_level()
 		load_level(lm.get_current_level_data())
 
@@ -85,7 +93,9 @@ func _on_win_overlay_replay() -> void:
 		reset_level()
 
 func _on_win_overlay_level_select() -> void:
-	pass
+	level_select_requested.emit()
+	if is_inside_tree() and get_tree() != null:
+		get_tree().change_scene_to_file("res://scenes/main.tscn")
 
 func _connect_hud_signals() -> void:
 	if hud == null:
@@ -100,6 +110,13 @@ func _connect_hud_signals() -> void:
 
 func _on_hud_snap_toggled(enabled: bool) -> void:
 	snap_enabled = enabled
+
+static func is_valid_piece_type(p_type: String) -> bool:
+	match p_type.to_lower():
+		"mirror", "prism", "sink", "wall":
+			return true
+		_:
+			return false
 
 static func _parse_color_string(color_str: String) -> BeamTypes.RayColor:
 	match color_str.to_lower():
@@ -132,8 +149,6 @@ func load_level(level_dict: Dictionary) -> void:
 		var light_source: LightSource = LIGHT_SOURCE_SCENE.instantiate() as LightSource
 		light_source.position = Vector2(source_data.get("x", 200.0), source_data.get("y", 540.0))
 		light_source.rotation = deg_to_rad(source_data.get("rot_deg", 0.0))
-		if source_data.has("color"):
-			light_source.beam_color = _parse_color_string(str(source_data.get("color")))
 		if container != null:
 			container.add_child(light_source)
 		else:
@@ -144,6 +159,7 @@ func load_level(level_dict: Dictionary) -> void:
 	for obj_entry in objects_data:
 		var obj_dict: Dictionary = obj_entry as Dictionary
 		var obj_type: String = str(obj_dict.get("type", "")).to_lower()
+		assert(is_valid_piece_type(obj_type), "Unknown optical piece type in levels.json: " + str(obj_type))
 		var node: Node2D = null
 
 		match obj_type:
@@ -175,8 +191,6 @@ func load_level(level_dict: Dictionary) -> void:
 				var h: float = float(obj_dict.get("height", 300.0))
 				wall.set_wall_size(w, h)
 				node = wall
-			_:
-				assert(false, "Unknown optical piece type in levels.json: " + str(obj_type))
 
 		if node != null:
 			if container != null:
@@ -192,7 +206,6 @@ func load_level(level_dict: Dictionary) -> void:
 
 	mark_dirty()
 	update_beams()
-	is_dirty = false
 
 func reset_level() -> void:
 	_release_drag()
@@ -391,23 +404,21 @@ func _evaluate_win_condition(delta: float) -> void:
 
 func _show_win_modal() -> void:
 	if win_overlay == null:
-		win_overlay = get_node_or_null("WinOverlay")
+		win_overlay = get_node_or_null("WinOverlay") as WinOverlay
 	if win_overlay == null:
 		return
 
-	var lm: Node = null
-	if is_inside_tree() and get_tree() != null and get_tree().root != null:
-		lm = get_tree().root.get_node_or_null("LevelManager")
-
+	var lm: LevelManagerNode = _get_level_manager()
 	var lvl_title: String = current_level_dict.get("title", "Level Complete")
 	var is_last: bool = false
 
 	if lm != null:
-		lm.complete_current_level()
 		var cur_data: Dictionary = lm.get_current_level_data()
 		if not cur_data.is_empty():
 			lvl_title = cur_data.get("title", lvl_title)
 		is_last = not lm.has_next_level()
+		if is_last:
+			lm.complete_current_level()
 
 	win_overlay.show_victory(lvl_title, is_last)
 
