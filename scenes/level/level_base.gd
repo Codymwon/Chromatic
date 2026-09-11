@@ -12,7 +12,6 @@ const Mirror = preload("res://scenes/objects/mirror.gd")
 const Prism = preload("res://scenes/objects/prism.gd")
 const GoalSink = preload("res://scenes/objects/goal_sink.gd")
 const Wall = preload("res://scenes/objects/wall.gd")
-const HUD_SCRIPT = preload("res://scenes/ui/hud.gd")
 
 enum DragMode { NONE, MOVE, ROTATE }
 
@@ -71,9 +70,8 @@ func reset_level() -> void:
 	is_completed = false
 
 	for child in _get_objects_children():
-		if child is Mirror or child is Prism:
-			if child.has_method("reset_transform"):
-				child.reset_transform()
+		if child.has_method("reset_transform"):
+			child.reset_transform()
 
 	mark_dirty()
 
@@ -82,6 +80,22 @@ func _unhandled_input(event: InputEvent) -> void:
 		_handle_screen_touch(event as InputEventScreenTouch)
 	elif event is InputEventScreenDrag:
 		_handle_screen_drag(event as InputEventScreenDrag)
+	elif event is InputEventMouseButton:
+		var mb: InputEventMouseButton = event as InputEventMouseButton
+		if mb.button_index == MOUSE_BUTTON_LEFT:
+			var st := InputEventScreenTouch.new()
+			st.position = mb.position
+			st.pressed = mb.pressed
+			st.index = 0
+			_handle_screen_touch(st)
+	elif event is InputEventMouseMotion:
+		var mm: InputEventMouseMotion = event as InputEventMouseMotion
+		if mm.button_mask & MOUSE_BUTTON_MASK_LEFT:
+			var sd := InputEventScreenDrag.new()
+			sd.position = mm.position
+			sd.relative = mm.relative
+			sd.index = 0
+			_handle_screen_drag(sd)
 
 func get_draggable_object_at(pos: Vector2) -> Node2D:
 	if is_inside_tree():
@@ -93,29 +107,52 @@ func get_draggable_object_at(pos: Vector2) -> Node2D:
 			params.collision_mask = 16 # Layer 5: touch_targets
 			params.collide_with_areas = true
 			params.collide_with_bodies = true
-			var hits: Array[Dictionary] = space.intersect_point(params)
+			var hits: Array[Dictionary] = space.intersect_point(params, 32)
+			var candidates: Array[Node2D] = []
 			for hit in hits:
 				var collider: Object = hit.get("collider")
 				if collider is Node:
 					var node: Node = collider as Node
-					if node.name == "TouchTarget" and node.get_parent() is Node2D:
-						var parent: Node2D = node.get_parent() as Node2D
-						if parent is Mirror or parent is Prism:
-							return parent
-					elif node is Mirror or node is Prism:
-						return node as Node2D
+					var piece: Node2D = null
+					if node.has_method("reset_transform") and node is Node2D:
+						piece = node as Node2D
+					elif node.get_parent() != null and node.get_parent().has_method("reset_transform") and node.get_parent() is Node2D:
+						piece = node.get_parent() as Node2D
+					if piece != null and not candidates.has(piece):
+						candidates.append(piece)
 
-	var closest_piece: Node2D = null
-	var closest_dist: float = INF
+			if candidates.size() > 0:
+				# Sort by visual layering: highest z_index first, then highest child index in tree
+				candidates.sort_custom(func(a: Node2D, b: Node2D) -> bool:
+					if a.z_index != b.z_index:
+						return a.z_index > b.z_index
+					return a.get_index() > b.get_index()
+				)
+				return candidates[0]
+			return null
+
+	# Fallback for headless tests running without an active 2D physics world
+	var candidate_pieces: Array[Node2D] = []
 	for child in _get_objects_children():
-		if child is Mirror or child is Prism:
+		if child.has_method("reset_transform") and child is Node2D:
 			var piece: Node2D = child as Node2D
 			var dist: float = piece.global_position.distance_to(pos)
-			if dist <= MAX_GRAB_RADIUS and dist < closest_dist:
-				closest_dist = dist
-				closest_piece = piece
+			if dist <= MAX_GRAB_RADIUS:
+				candidate_pieces.append(piece)
 
-	return closest_piece
+	if candidate_pieces.size() > 0:
+		candidate_pieces.sort_custom(func(a: Node2D, b: Node2D) -> bool:
+			var dist_a: float = a.global_position.distance_to(pos)
+			var dist_b: float = b.global_position.distance_to(pos)
+			if absf(dist_a - dist_b) < 1.0:
+				if a.z_index != b.z_index:
+					return a.z_index > b.z_index
+				return a.get_index() > b.get_index()
+			return dist_a < dist_b
+		)
+		return candidate_pieces[0]
+
+	return null
 
 func _handle_screen_touch(event: InputEventScreenTouch) -> void:
 	if event.pressed:
@@ -175,11 +212,10 @@ func _release_drag() -> void:
 
 func _connect_object_signals() -> void:
 	for child in _get_objects_children():
-		if child is Mirror or child is Prism:
-			if child.has_method("store_initial_transform") and "_initial_transform_stored" in child and not child._initial_transform_stored:
-				child.store_initial_transform()
-			if child.has_signal("transformed") and not child.transformed.is_connected(mark_dirty):
-				child.transformed.connect(mark_dirty)
+		if child.has_method("store_initial_transform"):
+			child.store_initial_transform()
+		if child.has_signal("transformed") and not child.transformed.is_connected(mark_dirty):
+			child.transformed.connect(mark_dirty)
 
 func mark_dirty() -> void:
 	is_dirty = true
