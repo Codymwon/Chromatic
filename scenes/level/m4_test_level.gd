@@ -1,3 +1,3 @@
 class_name M4TestLevel
-extends LevelBase
+extends "res://scenes/level/level_base.gd"
 

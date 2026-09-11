@@ -21,6 +21,8 @@ const M3TestLevel = preload("res://scenes/level/m3_test_level.gd")
 const M3_LEVEL_SCENE: PackedScene = preload("res://scenes/level/m3_test_level.tscn")
 const LevelBase = preload("res://scenes/level/level_base.gd")
 const LEVEL_BASE_SCENE: PackedScene = preload("res://scenes/level/level_base.tscn")
+const M4TestLevel = preload("res://scenes/level/m4_test_level.gd")
+const M4_LEVEL_SCENE: PackedScene = preload("res://scenes/level/m4_test_level.tscn")
 
 class MockPrism extends RefCounted:
 	var rotation: float = 0.0
@@ -1550,6 +1552,244 @@ func test_level_base_no_duplicate_win_emission() -> void:
 	level._evaluate_win_condition(0.5)
 	assert_eq(emit_count[0], 1, "Duplicate frames must not re-emit level_completed")
 
+	level.free()
+
+# --- Integration Tests for M4 RGB Playable Level (M4 Issue 04) ---
+
+func test_m4_test_level_scene_structure() -> void:
+	var instance: Node = M4_LEVEL_SCENE.instantiate()
+	assert_true(instance is M4TestLevel, "Scene should instantiate as M4TestLevel")
+	assert_true(instance is LevelBase, "M4TestLevel should inherit from LevelBase")
+
+	var renderer: Node = instance.get_node_or_null("BeamRenderer")
+	assert_true(renderer is BeamRenderer, "Level should have BeamRenderer")
+
+	var objects: Node2D = (instance as LevelBase).get_objects_container()
+	assert_true(objects != null, "Level should have Objects container")
+
+	var light_node: Node = objects.get_node_or_null("LightSource")
+	assert_true(light_node is LightSource, "Objects should contain LightSource")
+	if light_node is LightSource:
+		assert_vector_approx((light_node as LightSource).position, Vector2(200, 540), 0.001, "LightSource position mismatch")
+
+	var prism_node: Node = objects.get_node_or_null("Prism")
+	assert_true(prism_node is Prism, "Objects should contain Prism")
+	if prism_node is Prism:
+		assert_eq((prism_node as Prism).collision_layer, 4, "Prism collision layer should be 4 (prisms)")
+		assert_vector_approx((prism_node as Prism).position, Vector2(600, 540), 0.001, "Prism position mismatch")
+
+	var red_sink: Node = objects.get_node_or_null("RedSink")
+	assert_true(red_sink is GoalSink, "Objects should contain RedSink")
+	if red_sink is GoalSink:
+		assert_eq((red_sink as GoalSink).required_color, BeamTypes.RayColor.RED, "RedSink required_color should be RED")
+		assert_eq((red_sink as GoalSink).collision_layer, 8, "RedSink collision layer should be 8 (sensors)")
+		assert_vector_approx((red_sink as GoalSink).position, Vector2(1200, 406), 0.001, "RedSink position mismatch")
+
+	var green_sink: Node = objects.get_node_or_null("GreenSink")
+	assert_true(green_sink is GoalSink, "Objects should contain GreenSink")
+	if green_sink is GoalSink:
+		assert_eq((green_sink as GoalSink).required_color, BeamTypes.RayColor.GREEN, "GreenSink required_color should be GREEN")
+		assert_eq((green_sink as GoalSink).collision_layer, 8, "GreenSink collision layer should be 8 (sensors)")
+		assert_vector_approx((green_sink as GoalSink).position, Vector2(1200, 540), 0.001, "GreenSink position mismatch")
+
+	var blue_sink: Node = objects.get_node_or_null("BlueSink")
+	assert_true(blue_sink is GoalSink, "Objects should contain BlueSink")
+	if blue_sink is GoalSink:
+		assert_eq((blue_sink as GoalSink).required_color, BeamTypes.RayColor.BLUE, "BlueSink required_color should be BLUE")
+		assert_eq((blue_sink as GoalSink).collision_layer, 8, "BlueSink collision layer should be 8 (sensors)")
+		assert_vector_approx((blue_sink as GoalSink).position, Vector2(1200, 674), 0.001, "BlueSink position mismatch")
+
+	var p_top: Node = objects.get_node_or_null("PerimeterTop")
+	assert_true(p_top is Wall, "Level should contain PerimeterTop")
+	var p_bot: Node = objects.get_node_or_null("PerimeterBottom")
+	assert_true(p_bot is Wall, "Level should contain PerimeterBottom")
+	var p_left: Node = objects.get_node_or_null("PerimeterLeft")
+	assert_true(p_left is Wall, "Level should contain PerimeterLeft")
+	var p_right: Node = objects.get_node_or_null("PerimeterRight")
+	assert_true(p_right is Wall, "Level should contain PerimeterRight")
+
+	instance.free()
+
+func test_m4_test_level_dirty_flag() -> void:
+	var level: M4TestLevel = M4_LEVEL_SCENE.instantiate() as M4TestLevel
+	level._ready()
+	assert_eq(level.is_dirty, true, "M4TestLevel should start in dirty state")
+	level._process(0.016)
+	assert_eq(level.is_dirty, false, "M4TestLevel should clear dirty flag after process frame")
+
+	var prism: Prism = level.get_objects_container().get_node("Prism") as Prism
+	assert_true(prism != null, "Prism should exist in level")
+	if prism != null:
+		prism.rotation += 0.1
+		prism._notification(CanvasItem.NOTIFICATION_TRANSFORM_CHANGED)
+		assert_eq(level.is_dirty, true, "Rotating Prism should mark level dirty")
+
+	level._process(0.016)
+	assert_eq(level.is_dirty, false, "Level should clear dirty flag after re-process")
+
+	if prism != null:
+		prism.position += Vector2(10, 0)
+		prism._notification(CanvasItem.NOTIFICATION_TRANSFORM_CHANGED)
+		assert_eq(level.is_dirty, true, "Translating Prism should mark level dirty")
+
+	level._process(0.016)
+	assert_eq(level.is_dirty, false, "Level should clear dirty flag after re-process")
+
+	level.free()
+
+func test_m4_test_level_physics_dispersion_and_win() -> void:
+	var level: M4TestLevel = M4_LEVEL_SCENE.instantiate() as M4TestLevel
+	var space: PhysicsDirectSpaceState2D = root.world_2d.direct_space_state
+
+	var prism_node: Prism = level.get_objects_container().get_node("Prism") as Prism
+	var red_sink_node: GoalSink = level.get_objects_container().get_node("RedSink") as GoalSink
+	var green_sink_node: GoalSink = level.get_objects_container().get_node("GreenSink") as GoalSink
+	var blue_sink_node: GoalSink = level.get_objects_container().get_node("BlueSink") as GoalSink
+
+	# Prism at (600, 540) - Area2D on layer 4 (bitmask 4)
+	var prism_area: RID = PhysicsServer2D.area_create()
+	PhysicsServer2D.area_set_space(prism_area, root.world_2d.space)
+	PhysicsServer2D.area_attach_object_instance_id(prism_area, prism_node.get_instance_id())
+	var prism_shape: RID = PhysicsServer2D.rectangle_shape_create()
+	PhysicsServer2D.shape_set_data(prism_shape, Vector2(30.0, 30.0))
+	PhysicsServer2D.area_add_shape(prism_area, prism_shape, Transform2D(0.0, Vector2(600.0, 540.0)))
+	PhysicsServer2D.area_set_collision_layer(prism_area, 4)
+
+	# Red Sink at (1200, 406) - Area2D on layer 4 (bitmask 8)
+	var red_area: RID = PhysicsServer2D.area_create()
+	PhysicsServer2D.area_set_space(red_area, root.world_2d.space)
+	PhysicsServer2D.area_attach_object_instance_id(red_area, red_sink_node.get_instance_id())
+	var red_shape: RID = PhysicsServer2D.circle_shape_create()
+	PhysicsServer2D.shape_set_data(red_shape, 24.0)
+	PhysicsServer2D.area_add_shape(red_area, red_shape, Transform2D(0.0, Vector2(1200.0, 406.0)))
+	PhysicsServer2D.area_set_collision_layer(red_area, 8)
+
+	# Green Sink at (1200, 540) - Area2D on layer 4 (bitmask 8)
+	var green_area: RID = PhysicsServer2D.area_create()
+	PhysicsServer2D.area_set_space(green_area, root.world_2d.space)
+	PhysicsServer2D.area_attach_object_instance_id(green_area, green_sink_node.get_instance_id())
+	var green_shape: RID = PhysicsServer2D.circle_shape_create()
+	PhysicsServer2D.shape_set_data(green_shape, 24.0)
+	PhysicsServer2D.area_add_shape(green_area, green_shape, Transform2D(0.0, Vector2(1200.0, 540.0)))
+	PhysicsServer2D.area_set_collision_layer(green_area, 8)
+
+	# Blue Sink at (1200, 674) - Area2D on layer 4 (bitmask 8)
+	var blue_area: RID = PhysicsServer2D.area_create()
+	PhysicsServer2D.area_set_space(blue_area, root.world_2d.space)
+	PhysicsServer2D.area_attach_object_instance_id(blue_area, blue_sink_node.get_instance_id())
+	var blue_shape: RID = PhysicsServer2D.circle_shape_create()
+	PhysicsServer2D.shape_set_data(blue_shape, 24.0)
+	PhysicsServer2D.area_add_shape(blue_area, blue_shape, Transform2D(0.0, Vector2(1200.0, 674.0)))
+	PhysicsServer2D.area_set_collision_layer(blue_area, 8)
+
+	var win_emitted: Array[bool] = [false]
+	level.level_completed.connect(func(): win_emitted[0] = true)
+
+	var segments: Array[BeamTypes.Segment] = level.update_beams(space)
+
+	# Expect exactly 4 segments:
+	# 0: White incident ray hitting Prism
+	# 1: Red ray (-12 deg) terminating on RedSink
+	# 2: Green ray (0 deg) terminating on GreenSink
+	# 3: Blue ray (+12 deg) terminating on BlueSink
+	assert_eq(segments.size(), 4, "White incident ray split into RGB fan hitting 3 sinks should produce 4 segments")
+
+	if segments.size() >= 4:
+		# Segment 0: White incident ray
+		assert_eq(segments[0].color, BeamTypes.RayColor.WHITE, "Seg 0 must be WHITE")
+		assert_vector_approx(segments[0].a, Vector2(224.0, 540.0), 0.001, "Seg 0 should start at light source emitter")
+		assert_vector_approx(segments[0].b, Vector2(570.0, 540.0), 5.0, "Seg 0 should hit Prism left boundary")
+
+		# Segment 1: Red ray
+		assert_eq(segments[1].color, BeamTypes.RayColor.RED, "Seg 1 must be RED")
+		var r_dir: Vector2 = (segments[1].b - segments[1].a).normalized()
+		assert_vector_approx(r_dir, Vector2.from_angle(deg_to_rad(-12.0)), 0.001, "Red ray direction mismatch")
+		assert_true(segments[1].b.distance_to(Vector2(1200, 406)) <= 25.0, "Red ray must terminate at RedSink boundary")
+
+		# Segment 2: Green ray
+		assert_eq(segments[2].color, BeamTypes.RayColor.GREEN, "Seg 2 must be GREEN")
+		var g_dir: Vector2 = (segments[2].b - segments[2].a).normalized()
+		assert_vector_approx(g_dir, Vector2.RIGHT, 0.001, "Green ray direction mismatch")
+		assert_true(segments[2].b.distance_to(Vector2(1200, 540)) <= 25.0, "Green ray must terminate at GreenSink boundary")
+
+		# Segment 3: Blue ray
+		assert_eq(segments[3].color, BeamTypes.RayColor.BLUE, "Seg 3 must be BLUE")
+		var b_dir: Vector2 = (segments[3].b - segments[3].a).normalized()
+		assert_vector_approx(b_dir, Vector2.from_angle(deg_to_rad(12.0)), 0.001, "Blue ray direction mismatch")
+		assert_true(segments[3].b.distance_to(Vector2(1200, 674)) <= 25.0, "Blue ray must terminate at BlueSink boundary")
+
+	# Sinks should now be lit
+	assert_eq(red_sink_node.is_currently_lit(), true, "RedSink should be lit by Red beam")
+	assert_eq(green_sink_node.is_currently_lit(), true, "GreenSink should be lit by Green beam")
+	assert_eq(blue_sink_node.is_currently_lit(), true, "BlueSink should be lit by Blue beam")
+
+	# Evaluate win condition - 0.4s hold (not yet complete)
+	level._evaluate_win_condition(0.4)
+	assert_float_approx(level.win_hold_elapsed, 0.4, 0.001, "Hold time should accumulate to 0.4s")
+	assert_eq(level.is_completed, false, "Level must not be complete at 0.4s")
+	assert_eq(win_emitted[0], false, "level_completed must not emit at 0.4s")
+
+	# Pass 0.5s threshold
+	level._evaluate_win_condition(0.15)
+	assert_float_approx(level.win_hold_elapsed, 0.55, 0.001, "Hold time should reach 0.55s")
+	assert_eq(level.is_completed, true, "Level should be completed after 0.5s hold")
+	assert_eq(win_emitted[0], true, "level_completed signal must emit")
+
+	# Free physics resources
+	PhysicsServer2D.free_rid(prism_shape)
+	PhysicsServer2D.free_rid(prism_area)
+	PhysicsServer2D.free_rid(red_shape)
+	PhysicsServer2D.free_rid(red_area)
+	PhysicsServer2D.free_rid(green_shape)
+	PhysicsServer2D.free_rid(green_area)
+	PhysicsServer2D.free_rid(blue_shape)
+	PhysicsServer2D.free_rid(blue_area)
+	level.free()
+
+func test_m4_test_level_win_jitter_resets_timer() -> void:
+	var level: M4TestLevel = M4_LEVEL_SCENE.instantiate() as M4TestLevel
+	var red_sink_node: GoalSink = level.get_objects_container().get_node("RedSink") as GoalSink
+	var green_sink_node: GoalSink = level.get_objects_container().get_node("GreenSink") as GoalSink
+	var blue_sink_node: GoalSink = level.get_objects_container().get_node("BlueSink") as GoalSink
+
+	var win_emitted: Array[bool] = [false]
+	level.level_completed.connect(func(): win_emitted[0] = true)
+
+	red_sink_node.set_lit(true)
+	green_sink_node.set_lit(true)
+	blue_sink_node.set_lit(true)
+
+	level._evaluate_win_condition(0.4)
+	assert_float_approx(level.win_hold_elapsed, 0.4, 0.001, "Hold time should reach 0.4s")
+	assert_eq(level.is_completed, false, "Level must not be complete at 0.4s")
+
+	# Jitter interruption: one sink disconnects at 0.4s
+	red_sink_node.set_lit(false)
+	level._evaluate_win_condition(0.016)
+	assert_float_approx(level.win_hold_elapsed, 0.0, 0.001, "Hold time must reset to 0.0 on jitter interruption")
+	assert_eq(level.is_completed, false, "Level must remain uncompleted after jitter")
+	assert_eq(win_emitted[0], false, "level_completed must not emit on jitter")
+
+	# Reconnect sink: timer restarts from 0
+	red_sink_node.set_lit(true)
+	level._evaluate_win_condition(0.3)
+	assert_float_approx(level.win_hold_elapsed, 0.3, 0.001, "Hold time must restart from 0.0 and accumulate to 0.3s")
+	assert_eq(level.is_completed, false, "Level must not complete early")
+
+	level.free()
+
+func test_m4_test_level_zero_allocations() -> void:
+	var level: M4TestLevel = M4_LEVEL_SCENE.instantiate() as M4TestLevel
+	var space: PhysicsDirectSpaceState2D = root.world_2d.direct_space_state
+	var renderer: BeamRenderer = level.get_beam_renderer()
+	renderer._init_pool()
+	var initial_child_count: int = renderer.get_child_count()
+	assert_eq(initial_child_count, 64, "Initial pooled child count should be 64")
+
+	for i in range(10):
+		level.update_beams(space)
+
+	assert_eq(renderer.get_child_count(), initial_child_count, "BeamRenderer child count must remain constant (zero runtime allocations)")
 	level.free()
 
 
