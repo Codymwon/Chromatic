@@ -2,6 +2,9 @@
 
 [ext_resource type="Script" path="res://scenes/objects/prism.gd" id="1_prism"]
 
+[sub_resource type="CircleShape2D" id="CircleShape2D_touch"]
+radius = 48.0
+
 [node name="Prism" type="Area2D"]
 collision_layer = 4
 collision_mask = 0
@@ -22,3 +25,16 @@ polygon = PackedVector2Array(0, -20, 16, 10, -16, 10)
 points = PackedVector2Array(0, -36, 32, 18, -32, 18, 0, -36)
 width = 2.0
 default_color = Color(0.6, 0.85, 1, 0.8)
+
+[node name="RotationRing" type="Line2D" parent="."]
+visible = false
+points = PackedVector2Array(48, 0, 44.3, 18.4, 33.9, 33.9, 18.4, 44.3, 0, 48, -18.4, 44.3, -33.9, 33.9, -44.3, 18.4, -48, 0, -44.3, -18.4, -33.9, -33.9, -18.4, -44.3, 0, -48, 18.4, -44.3, 33.9, -33.9, 44.3, -18.4, 48, 0)
+width = 1.5
+default_color = Color(0.6, 0.8, 1, 0.5)
+
+[node name="TouchTarget" type="Area2D" parent="."]
+collision_layer = 16
+collision_mask = 0
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="TouchTarget"]
+shape = SubResource("CircleShape2D_touch")
