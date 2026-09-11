@@ -1,0 +1,11 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scenes/level/level_base.gd" id="1_base"]
+[ext_resource type="PackedScene" path="res://scenes/fx/beam_renderer.tscn" id="2_renderer"]
+
+[node name="LevelBase" type="Node2D"]
+script = ExtResource("1_base")
+
+[node name="BeamRenderer" parent="." instance=ExtResource("2_renderer")]
+
+[node name="Objects" type="Node2D" parent="."]

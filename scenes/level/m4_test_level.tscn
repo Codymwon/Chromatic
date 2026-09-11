@@ -1,0 +1,47 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scenes/level/m4_test_level.gd" id="1_m4"]
+[ext_resource type="PackedScene" path="res://scenes/fx/beam_renderer.tscn" id="2_renderer"]
+[ext_resource type="PackedScene" path="res://scenes/objects/light_source.tscn" id="3_source"]
+[ext_resource type="PackedScene" path="res://scenes/objects/prism.tscn" id="4_prism"]
+[ext_resource type="PackedScene" path="res://scenes/objects/goal_sink.tscn" id="5_sink"]
+[ext_resource type="PackedScene" path="res://scenes/objects/wall.tscn" id="6_wall"]
+
+[node name="M4TestLevel" type="Node2D"]
+script = ExtResource("1_m4")
+
+[node name="BeamRenderer" parent="." instance=ExtResource("2_renderer")]
+
+[node name="Objects" type="Node2D" parent="."]
+
+[node name="LightSource" parent="Objects" instance=ExtResource("3_source")]
+position = Vector2(200, 540)
+
+[node name="Prism" parent="Objects" instance=ExtResource("4_prism")]
+position = Vector2(600, 540)
+
+[node name="RedSink" parent="Objects" instance=ExtResource("5_sink")]
+position = Vector2(1200, 406)
+required_color = 1
+
+[node name="GreenSink" parent="Objects" instance=ExtResource("5_sink")]
+position = Vector2(1200, 540)
+required_color = 2
+
+[node name="BlueSink" parent="Objects" instance=ExtResource("5_sink")]
+position = Vector2(1200, 674)
+required_color = 3
+
+[node name="PerimeterTop" parent="Objects" instance=ExtResource("6_wall")]
+position = Vector2(960, 20)
+rotation = 1.5708
+
+[node name="PerimeterBottom" parent="Objects" instance=ExtResource("6_wall")]
+position = Vector2(960, 1060)
+rotation = 1.5708
+
+[node name="PerimeterLeft" parent="Objects" instance=ExtResource("6_wall")]
+position = Vector2(20, 540)
+
+[node name="PerimeterRight" parent="Objects" instance=ExtResource("6_wall")]
+position = Vector2(1900, 540)
