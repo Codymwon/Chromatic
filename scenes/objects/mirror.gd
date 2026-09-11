@@ -6,6 +6,8 @@ signal transformed
 const BeamTypes = preload("res://core/beam_types.gd")
 
 @export var collider_type: BeamTypes.ColliderType = BeamTypes.ColliderType.MIRROR
+@export var is_draggable: bool = true
+@export var is_rotatable: bool = true
 
 var initial_position: Vector2 = Vector2.ZERO
 var initial_rotation: float = 0.0
@@ -71,7 +73,7 @@ func _update_rotation_ring() -> void:
 	if rotation_ring == null:
 		rotation_ring = get_node_or_null("RotationRing")
 	if rotation_ring != null:
-		rotation_ring.visible = _is_hovered or _is_active
+		rotation_ring.visible = is_rotatable and (_is_hovered or _is_active)
 
 func get_facing_normal() -> Vector2:
 	return Vector2.UP.rotated(rotation)
