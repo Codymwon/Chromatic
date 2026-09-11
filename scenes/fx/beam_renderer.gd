@@ -11,6 +11,9 @@ const COLOR_PALETTE: Dictionary = {
 	BeamTypes.RayColor.BLUE: Color(0.25, 0.55, 1.0, 1.0),
 }
 
+static func get_palette_color(p_color: BeamTypes.RayColor) -> Color:
+	return COLOR_PALETTE.get(p_color, Color.WHITE)
+
 @export var pool_size: int = DEFAULT_POOL_SIZE
 
 var _halo_lines: Array[Line2D] = []
@@ -70,3 +73,18 @@ func render_segments(segments: Array[BeamTypes.Segment]) -> void:
 	for i in range(active_count, pool_size):
 		_halo_lines[i].visible = false
 		_core_lines[i].visible = false
+
+func get_active_halo_lines() -> Array[Line2D]:
+	var active: Array[Line2D] = []
+	for line in _halo_lines:
+		if line.visible:
+			active.append(line)
+	return active
+
+func get_active_core_lines() -> Array[Line2D]:
+	var active: Array[Line2D] = []
+	for line in _core_lines:
+		if line.visible:
+			active.append(line)
+	return active
+
