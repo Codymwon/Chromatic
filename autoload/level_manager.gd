@@ -40,6 +40,7 @@ func load_levels_json(path: String = DEFAULT_LEVELS_PATH) -> bool:
 
 	var dict: Dictionary = parsed as Dictionary
 	levels_version = int(dict.get("version", 1))
+	assert(levels_version == 1, "[LevelManager] Unsupported schema version: " + str(levels_version))
 	var raw_levels: Array = dict.get("levels", [])
 	for lvl in raw_levels:
 		if lvl is Dictionary:
@@ -106,11 +107,6 @@ func complete_current_level() -> void:
 		unlocked_level = current_level_index + 2
 
 	save_game()
-
-func unlock_next_level() -> void:
-	if unlocked_level < get_level_count():
-		unlocked_level += 1
-		save_game()
 
 func load_next_level() -> bool:
 	if current_level_index + 1 < get_level_count():
