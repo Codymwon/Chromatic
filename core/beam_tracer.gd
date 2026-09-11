@@ -76,6 +76,54 @@ static func _trace_recursive(
 			next_exclude,
 			segments
 		)
+	elif hit.collider_type == BeamTypes.ColliderType.PRISM:
+		var next_exclude: Array[RID] = []
+		if hit.rid.is_valid():
+			next_exclude.append(hit.rid)
+
+		if color == BeamTypes.RayColor.WHITE:
+			var prism_rotation: float = 0.0
+			if hit.collider != null and "rotation" in hit.collider:
+				prism_rotation = hit.collider.rotation
+
+			var half_angle_rad: float = deg_to_rad(GameConstants.PRISM_HALF_ANGLE_DEG)
+			var fan_colors: Array[BeamTypes.RayColor] = [
+				BeamTypes.RayColor.RED,
+				BeamTypes.RayColor.GREEN,
+				BeamTypes.RayColor.BLUE,
+			]
+			var fan_offsets: Array[float] = [
+				-half_angle_rad,
+				0.0,
+				half_angle_rad,
+			]
+
+			for i in range(3):
+				var fan_color: BeamTypes.RayColor = fan_colors[i]
+				var fan_dir: Vector2 = Vector2.from_angle(prism_rotation + fan_offsets[i]).normalized()
+				var fan_origin: Vector2 = hit.point + fan_dir * GameConstants.RAY_STEP_NUDGE
+
+				_trace_recursive(
+					cast_fn,
+					fan_origin,
+					fan_dir,
+					fan_color,
+					bounces_remaining - 1,
+					next_exclude,
+					segments
+				)
+		else:
+			# Colored ray passes straight through without deflection or re-splitting
+			var pass_origin: Vector2 = hit.point + direction * GameConstants.RAY_STEP_NUDGE
+			_trace_recursive(
+				cast_fn,
+				pass_origin,
+				direction,
+				color,
+				bounces_remaining - 1,
+				next_exclude,
+				segments
+			)
 	else:
 		# Default termination for unhandled or absorbing collision
 		return
