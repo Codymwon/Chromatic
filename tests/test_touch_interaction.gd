@@ -206,7 +206,69 @@ static func test_hud_snap_toggle_and_level_reset(runner: Object) -> void:
 
 	level.free()
 
+static func test_top_most_selection(runner: Object) -> void:
+	var level: LevelBase = LEVEL_BASE_SCENE.instantiate() as LevelBase
+	var m1: Mirror = MIRROR_SCENE.instantiate() as Mirror
+	m1.position = Vector2(500, 500)
+	m1.z_index = 0
+	var m2: Mirror = MIRROR_SCENE.instantiate() as Mirror
+	m2.position = Vector2(500, 500)
+	m2.z_index = 1 # Higher visual layer
+
+	level.get_objects_container().add_child(m1)
+	level.get_objects_container().add_child(m2)
+	level._ready()
+
+	# Query object at (500, 500)
+	var selected: Node2D = level.get_draggable_object_at(Vector2(500, 500))
+	runner.assert_eq(selected, m2, "Top-most optical piece with higher z_index should be selected")
+
+	level.free()
+
+static func test_rotation_ring_hover_feedback(runner: Object) -> void:
+	var mirror: Mirror = MIRROR_SCENE.instantiate() as Mirror
+	mirror._ready()
+	var ring: Line2D = mirror.get_node("RotationRing") as Line2D
+	runner.assert_eq(ring.visible, false, "Rotation ring should be hidden by default")
+
+	# Mouse hover entered
+	mirror._on_touch_target_mouse_entered()
+	runner.assert_eq(ring.visible, true, "Rotation ring should become visible on hover")
+
+	# Mouse hover exited
+	mirror._on_touch_target_mouse_exited()
+	runner.assert_eq(ring.visible, false, "Rotation ring should hide when hover exits")
+
+	# Active drag rotation overrides hover
+	mirror.set_rotation_ring_visible(true)
+	runner.assert_eq(ring.visible, true, "Active drag rotation should keep ring visible")
+	mirror._on_touch_target_mouse_exited()
+	runner.assert_eq(ring.visible, true, "Exiting hover while active drag should keep ring visible")
+	mirror.set_rotation_ring_visible(false)
+	runner.assert_eq(ring.visible, false, "Clearing active drag should hide ring if not hovered")
+
+	mirror.free()
+
+static func test_hud_input_consumption_and_accessibility(runner: Object) -> void:
+	var hud: HUD = HUD_SCENE.instantiate() as HUD
+	var snap_btn: Button = hud.get_node("TopBar/HBoxContainer/SnapButton") as Button
+	var reset_btn: Button = hud.get_node("TopBar/HBoxContainer/ResetButton") as Button
+
+	# Verify minimum touch target height meets 48px accessibility standard
+	runner.assert_true(snap_btn.custom_minimum_size.y >= 48.0, "Snap button height must be >= 48px")
+	runner.assert_true(reset_btn.custom_minimum_size.y >= 48.0, "Reset button height must be >= 48px")
+
+	# Verify buttons stop mouse/touch input propagation to game board
+	runner.assert_eq(snap_btn.mouse_filter, Control.MOUSE_FILTER_STOP, "SnapButton must consume touch events")
+	runner.assert_eq(reset_btn.mouse_filter, Control.MOUSE_FILTER_STOP, "ResetButton must consume touch events")
+
+	hud.free()
+
 static func test_mouse_touch_emulation_parity(runner: Object) -> void:
+	# Verify project setting for touch emulation from mouse
+	var emulate_enabled: bool = ProjectSettings.get_setting("input_devices/pointing/emulate_touch_from_mouse", false)
+	runner.assert_eq(emulate_enabled, true, "pointing/emulate_touch_from_mouse must be enabled in project settings")
+
 	var level: LevelBase = LEVEL_BASE_SCENE.instantiate() as LevelBase
 	var mirror: Mirror = MIRROR_SCENE.instantiate() as Mirror
 	mirror.position = Vector2(600, 400)
@@ -236,4 +298,30 @@ static func test_mouse_touch_emulation_parity(runner: Object) -> void:
 	level._unhandled_input(mouse_release)
 
 	runner.assert_eq(level.drag_mode, LevelBase.DragMode.NONE, "Mouse release should end drag")
+
+	# Test direct native mouse input events (InputEventMouseButton and InputEventMouseMotion)
+	var btn_down := InputEventMouseButton.new()
+	btn_down.button_index = MOUSE_BUTTON_LEFT
+	btn_down.position = Vector2(650, 420)
+	btn_down.pressed = true
+	level._unhandled_input(btn_down)
+
+	runner.assert_eq(level.drag_mode, LevelBase.DragMode.MOVE, "Native left mouse button press should initiate MOVE")
+	runner.assert_eq(level.active_drag_object, mirror, "Native mouse press should select mirror")
+
+	var motion := InputEventMouseMotion.new()
+	motion.button_mask = MOUSE_BUTTON_MASK_LEFT
+	motion.position = Vector2(700, 450)
+	level._unhandled_input(motion)
+
+	runner.assert_vector_approx(mirror.global_position, Vector2(700, 450), 0.001, "Native mouse motion should drag mirror")
+
+	var btn_up := InputEventMouseButton.new()
+	btn_up.button_index = MOUSE_BUTTON_LEFT
+	btn_up.position = Vector2(700, 450)
+	btn_up.pressed = false
+	level._unhandled_input(btn_up)
+
+	runner.assert_eq(level.drag_mode, LevelBase.DragMode.NONE, "Native mouse button release should end drag")
+
 	level.free()

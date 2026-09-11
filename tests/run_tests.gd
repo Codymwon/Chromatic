@@ -1971,6 +1971,15 @@ func test_touch_interaction_hud_and_reset() -> void:
 func test_touch_interaction_mouse_parity() -> void:
 	TestTouchInteraction.test_mouse_touch_emulation_parity(self)
 
+func test_touch_interaction_top_most() -> void:
+	TestTouchInteraction.test_top_most_selection(self)
+
+func test_touch_interaction_hover() -> void:
+	TestTouchInteraction.test_rotation_ring_hover_feedback(self)
+
+func test_touch_interaction_hud_consumption() -> void:
+	TestTouchInteraction.test_hud_input_consumption_and_accessibility(self)
+
 
 
 # --- M0 Regression Tests ---
