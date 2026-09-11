@@ -2001,6 +2001,9 @@ func test_level_system_progression_advancement() -> void:
 func test_level_system_win_overlay_flow() -> void:
 	TestLevelSystem.test_win_overlay_flow(self)
 
+func test_level_system_level_8_solvability() -> void:
+	TestLevelSystem.test_level_8_mathematical_solvability(self)
+
 
 
 # --- M0 Regression Tests ---

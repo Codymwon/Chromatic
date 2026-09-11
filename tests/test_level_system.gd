@@ -129,6 +129,7 @@ static func test_dynamic_level_loading(runner: Object) -> void:
 	}
 
 	level.load_level(test_level_dict)
+	runner.assert_true(level.is_dirty, "load_level should mark level dirty for immediate initial ray trace")
 
 	# Verify HUD title update
 	var hud: HUD = level.hud as HUD
@@ -218,9 +219,9 @@ static func test_win_overlay_flow(runner: Object) -> void:
 
 	runner.assert_eq(overlay.visible, false, "Win overlay should be hidden by default")
 
-	var next_btn: Button = overlay.get_node("CenterContainer/PanelContainer/MarginContainer/VBoxContainer/ButtonContainer/NextButton") as Button
-	var replay_btn: Button = overlay.get_node("CenterContainer/PanelContainer/MarginContainer/VBoxContainer/ButtonContainer/ReplayButton") as Button
-	var select_btn: Button = overlay.get_node("CenterContainer/PanelContainer/MarginContainer/VBoxContainer/ButtonContainer/LevelSelectButton") as Button
+	var next_btn: Button = overlay.next_button
+	var replay_btn: Button = overlay.replay_button
+	var select_btn: Button = overlay.level_select_button
 
 	# Accessibility touch target height
 	runner.assert_true(next_btn.custom_minimum_size.y >= 48.0, "Next button height must be >= 48px")
@@ -260,3 +261,144 @@ static func test_win_overlay_flow(runner: Object) -> void:
 	runner.assert_eq(events["select"], true, "Clicking Level Select should emit level_select_pressed")
 
 	overlay.free()
+
+static func test_level_8_mathematical_solvability(runner: Object) -> void:
+	var space: RID = runner.root.world_2d.space
+	var direct_state: PhysicsDirectSpaceState2D = runner.root.world_2d.direct_space_state
+
+	var nodes: Array[Node] = []
+	var rids: Array[RID] = []
+
+	var add_body = func(node: Node2D, shape_type: String, size_or_radius: Variant, pos: Vector2, rot: float, layer: int):
+		nodes.append(node)
+		node.position = pos
+		node.rotation = rot
+		var is_area: bool = (node is Area2D)
+		var body_rid: RID
+		if is_area:
+			body_rid = PhysicsServer2D.area_create()
+			PhysicsServer2D.area_set_space(body_rid, space)
+			PhysicsServer2D.area_attach_object_instance_id(body_rid, node.get_instance_id())
+		else:
+			body_rid = PhysicsServer2D.body_create()
+			PhysicsServer2D.body_set_mode(body_rid, PhysicsServer2D.BODY_MODE_STATIC)
+			PhysicsServer2D.body_set_space(body_rid, space)
+			PhysicsServer2D.body_attach_object_instance_id(body_rid, node.get_instance_id())
+		rids.append(body_rid)
+
+		var s_rid: RID
+		if shape_type == "rect":
+			s_rid = PhysicsServer2D.rectangle_shape_create()
+			PhysicsServer2D.shape_set_data(s_rid, size_or_radius)
+		elif shape_type == "circle":
+			s_rid = PhysicsServer2D.circle_shape_create()
+			PhysicsServer2D.shape_set_data(s_rid, size_or_radius)
+		rids.append(s_rid)
+
+		var xform := Transform2D(rot, pos)
+		if is_area:
+			PhysicsServer2D.area_add_shape(body_rid, s_rid, xform)
+			PhysicsServer2D.area_set_collision_layer(body_rid, layer)
+		else:
+			PhysicsServer2D.body_add_shape(body_rid, s_rid, xform)
+			PhysicsServer2D.body_set_collision_layer(body_rid, layer)
+
+	# Prism at (500, 540)
+	var prism := Prism.new()
+	add_body.call(prism, "rect", Vector2(30.0, 30.0), Vector2(500.0, 540.0), 0.0, 4)
+
+	# Mirror 1 (Green) placed at (650, 540), rot = 45 deg -> reflects straight down
+	var m1 := Mirror.new()
+	add_body.call(m1, "rect", Vector2(30.0, 6.0), Vector2(650.0, 540.0), deg_to_rad(45.0), 2)
+
+	# Mirror 2 (Red) placed at (1000, 434), rot = 0 deg -> reflects down-right
+	var m2 := Mirror.new()
+	add_body.call(m2, "rect", Vector2(60.0, 10.0), Vector2(1000.0, 434.0), 0.0, 2)
+
+	# Mirror 3 (Blue) placed at (1000, 646), rot = 0 deg -> reflects up-right
+	var m3 := Mirror.new()
+	add_body.call(m3, "rect", Vector2(60.0, 10.0), Vector2(1000.0, 646.0), 0.0, 2)
+
+	# Green Sink at (643, 950)
+	var gs := GoalSink.new()
+	gs.required_color = BeamTypes.RayColor.GREEN
+	add_body.call(gs, "circle", 24.0, Vector2(643.0, 950.0), 0.0, 8)
+
+	# Red Sink at (1650, 572)
+	var rs := GoalSink.new()
+	rs.required_color = BeamTypes.RayColor.RED
+	add_body.call(rs, "circle", 24.0, Vector2(1650.0, 572.0), 0.0, 8)
+
+	# Blue Sink at (1650, 508)
+	var bs := GoalSink.new()
+	bs.required_color = BeamTypes.RayColor.BLUE
+	add_body.call(bs, "circle", 24.0, Vector2(1650.0, 508.0), 0.0, 8)
+
+	# Wall at (1200, 540, w=40, h=60)
+	var w := Wall.new()
+	add_body.call(w, "rect", Vector2(20.0, 30.0), Vector2(1200.0, 540.0), 0.0, 1)
+
+	var cast_fn = func(origin: Vector2, direction: Vector2, exclude: Array[RID]) -> BeamTypes.RayHit:
+		var state: PhysicsDirectSpaceState2D = PhysicsServer2D.space_get_direct_state(space)
+		var params := PhysicsRayQueryParameters2D.create(
+			origin,
+			origin + direction * GameConstants.MAX_RAY_DISTANCE,
+			15,
+			exclude
+		)
+		params.collide_with_areas = true
+		params.collide_with_bodies = true
+
+		var result: Dictionary = state.intersect_ray(params)
+		if result.is_empty():
+			return null
+
+		var collider_obj: Object = result.get("collider")
+		var c_type: BeamTypes.ColliderType = BeamTypes.ColliderType.WALL
+		var normal: Vector2 = result.get("normal", Vector2.ZERO)
+
+		if collider_obj is Mirror:
+			c_type = BeamTypes.ColliderType.MIRROR
+			normal = collider_obj.get_facing_normal()
+		elif collider_obj is Prism:
+			c_type = BeamTypes.ColliderType.PRISM
+			normal = Vector2.from_angle(collider_obj.rotation)
+		elif collider_obj is GoalSink:
+			c_type = BeamTypes.ColliderType.SINK
+		elif collider_obj is Wall:
+			c_type = BeamTypes.ColliderType.WALL
+
+		return BeamTypes.RayHit.new(
+			result.get("position", Vector2.ZERO),
+			normal,
+			c_type,
+			collider_obj,
+			result.get("rid", RID())
+		)
+
+	var segments: Array[BeamTypes.Segment] = BeamTracer.trace(
+		cast_fn,
+		Vector2(150.0, 540.0),
+		Vector2.RIGHT,
+		BeamTypes.RayColor.WHITE
+	)
+
+	var red_hit: bool = false
+	var green_hit: bool = false
+	var blue_hit: bool = false
+	for seg in segments:
+		if seg.b.distance_to(rs.position) <= 24.0 and seg.color == BeamTypes.RayColor.RED:
+			red_hit = true
+		if seg.b.distance_to(gs.position) <= 24.0 and seg.color == BeamTypes.RayColor.GREEN:
+			green_hit = true
+		if seg.b.distance_to(bs.position) <= 24.0 and seg.color == BeamTypes.RayColor.BLUE:
+			blue_hit = true
+
+	runner.assert_true(red_hit, "Level 8: Red sink must be reached by reflected red ray")
+	runner.assert_true(green_hit, "Level 8: Green sink must be reached by reflected green ray")
+	runner.assert_true(blue_hit, "Level 8: Blue sink must be reached by reflected blue ray")
+
+	for r in rids:
+		PhysicsServer2D.free_rid(r)
+	for n in nodes:
+		n.free()
