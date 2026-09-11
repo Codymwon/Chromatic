@@ -443,7 +443,7 @@ func test_m1_test_level_dirty_flag() -> void:
 	assert_eq(level.is_dirty, true, "mark_dirty() should set is_dirty to true")
 	level.free()
 
-# --- Unit Tests for Wall Obstacle (M2 Issue 01) ---
+# --- Unit Tests for Wall (M2 Issue 01) ---
 
 func test_wall_scene_instantiation() -> void:
 	var wall: Wall = WALL_SCENE.instantiate() as Wall
@@ -462,7 +462,9 @@ func test_wall_scene_instantiation() -> void:
 func test_wall_properties() -> void:
 	var wall: Wall = Wall.new()
 	assert_eq(wall.collider_type, BeamTypes.ColliderType.WALL, "Wall collider_type should be BeamTypes.ColliderType.WALL")
-	assert_vector_approx(wall.size, Vector2(40.0, 300.0), 0.001, "Wall default size should be (40, 300)")
+	wall._ready()
+	assert_eq(wall.collision_layer, 1, "Wall should default to collision layer 1")
+	assert_eq(wall.collision_mask, 0, "Wall should default to collision mask 0")
 	wall.free()
 
 func test_wall_ray_termination() -> void:
@@ -506,7 +508,15 @@ func test_mirror_scene_instantiation() -> void:
 func test_mirror_properties_and_normal() -> void:
 	var mirror: Mirror = Mirror.new()
 	assert_eq(mirror.collider_type, BeamTypes.ColliderType.MIRROR, "Mirror collider_type should be MIRROR")
-	assert_vector_approx(mirror.size, Vector2(120.0, 16.0), 0.001, "Mirror default size should be (120, 16)")
+	mirror._ready()
+	assert_eq(mirror.collision_layer, 2, "Mirror should default to collision layer 2")
+	assert_eq(mirror.collision_mask, 0, "Mirror should default to collision mask 0")
+
+	var signal_emitted: Array[bool] = [false]
+	mirror.transformed.connect(func(): signal_emitted[0] = true)
+	mirror.rotation = 0.5
+	mirror._notification(CanvasItem.NOTIFICATION_TRANSFORM_CHANGED)
+	assert_true(signal_emitted[0], "Mirror should emit transformed signal upon transform change")
 
 	mirror.rotation = 0.0
 	assert_vector_approx(mirror.get_facing_normal(), Vector2.UP, 0.001, "Normal at rot 0 should be Vector2.UP")
@@ -725,15 +735,29 @@ func test_m2_test_level_scene_structure() -> void:
 		assert_eq((wall_node as Wall).collision_layer, 1, "Wall collision layer should be 1")
 		assert_vector_approx((wall_node as Wall).position, Vector2(1200, 700), 0.001, "Wall position mismatch")
 
+	var p_top: Node = instance.get_node_or_null("PerimeterTop")
+	assert_true(p_top is Wall, "Level should contain PerimeterTop")
+	var p_bot: Node = instance.get_node_or_null("PerimeterBottom")
+	assert_true(p_bot is Wall, "Level should contain PerimeterBottom")
+	var p_left: Node = instance.get_node_or_null("PerimeterLeft")
+	assert_true(p_left is Wall, "Level should contain PerimeterLeft")
+	var p_right: Node = instance.get_node_or_null("PerimeterRight")
+	assert_true(p_right is Wall, "Level should contain PerimeterRight")
+
 	instance.free()
 
 func test_m2_test_level_dirty_flag() -> void:
 	var level: M2TestLevel = M2_LEVEL_SCENE.instantiate() as M2TestLevel
+	level._ready()
 	assert_eq(level.is_dirty, true, "Level should start in dirty state")
 	level._process(0.016)
 	assert_eq(level.is_dirty, false, "Level should clear dirty flag after process frame")
-	level.mark_dirty()
-	assert_eq(level.is_dirty, true, "mark_dirty() should set is_dirty to true")
+	var m1: Mirror = level.get_node("Mirror1") as Mirror
+	assert_true(m1 != null, "Mirror1 should exist in level")
+	if m1 != null:
+		m1.rotation += 0.1
+		m1._notification(CanvasItem.NOTIFICATION_TRANSFORM_CHANGED)
+		assert_eq(level.is_dirty, true, "Rotating mirror in level should invalidate dirty state")
 	level.free()
 
 func test_m2_test_level_physics_reflection() -> void:
@@ -775,6 +799,74 @@ func test_m2_test_level_physics_reflection() -> void:
 	PhysicsServer2D.free_rid(wall_shape_rid)
 	PhysicsServer2D.free_rid(wall_body_rid)
 	mirror1.free()
+	wall.free()
+	level.free()
+
+func test_m2_test_level_z_path_physics() -> void:
+	var level: M2TestLevel = M2_LEVEL_SCENE.instantiate() as M2TestLevel
+	var space: PhysicsDirectSpaceState2D = root.world_2d.direct_space_state
+
+	# Mirror 1 at (600, 300) rotated 45° (reflects RIGHT to DOWN)
+	var mirror1: Mirror = Mirror.new()
+	mirror1.rotation = deg_to_rad(45.0)
+	var m1_body: RID = PhysicsServer2D.body_create()
+	PhysicsServer2D.body_set_space(m1_body, root.world_2d.space)
+	PhysicsServer2D.body_attach_object_instance_id(m1_body, mirror1.get_instance_id())
+	var m1_shape: RID = PhysicsServer2D.rectangle_shape_create()
+	PhysicsServer2D.shape_set_data(m1_shape, Vector2(60.0, 8.0))
+	PhysicsServer2D.body_add_shape(m1_body, m1_shape, Transform2D(deg_to_rad(45.0), Vector2(600.0, 300.0)))
+	PhysicsServer2D.body_set_collision_layer(m1_body, 2)
+
+	# Mirror 2 at (600, 700) rotated 45° (reflects DOWN to RIGHT)
+	var mirror2: Mirror = Mirror.new()
+	mirror2.rotation = deg_to_rad(45.0)
+	var m2_body: RID = PhysicsServer2D.body_create()
+	PhysicsServer2D.body_set_space(m2_body, root.world_2d.space)
+	PhysicsServer2D.body_attach_object_instance_id(m2_body, mirror2.get_instance_id())
+	var m2_shape: RID = PhysicsServer2D.rectangle_shape_create()
+	PhysicsServer2D.shape_set_data(m2_shape, Vector2(60.0, 8.0))
+	PhysicsServer2D.body_add_shape(m2_body, m2_shape, Transform2D(deg_to_rad(45.0), Vector2(600.0, 700.0)))
+	PhysicsServer2D.body_set_collision_layer(m2_body, 2)
+
+	# Terminating Wall at (1200, 700)
+	var wall: Wall = Wall.new()
+	var wall_body: RID = PhysicsServer2D.body_create()
+	PhysicsServer2D.body_set_space(wall_body, root.world_2d.space)
+	PhysicsServer2D.body_attach_object_instance_id(wall_body, wall.get_instance_id())
+	var wall_shape: RID = PhysicsServer2D.rectangle_shape_create()
+	PhysicsServer2D.shape_set_data(wall_shape, Vector2(20.0, 150.0))
+	PhysicsServer2D.body_add_shape(wall_body, wall_shape, Transform2D(0.0, Vector2(1200.0, 700.0)))
+	PhysicsServer2D.body_set_collision_layer(wall_body, 1)
+
+	var segments: Array[BeamTypes.Segment] = level.update_beam(space)
+	assert_eq(segments.size(), 3, "Z-path physics query should produce 3 segments (M1 -> M2 -> Wall)")
+	if segments.size() >= 3:
+		# Segment 0: horizontal to Mirror 1
+		assert_vector_approx(segments[0].a, Vector2(224.0, 300.0), 0.001, "Seg 0 start mismatch")
+		assert_vector_approx(segments[0].b, Vector2(600.0, 300.0), 15.0, "Seg 0 hit M1 mismatch")
+		var dir0: Vector2 = (segments[0].b - segments[0].a).normalized()
+		assert_vector_approx(dir0, Vector2.RIGHT, 0.001, "Seg 0 direction should be RIGHT")
+
+		# Segment 1: vertical down to Mirror 2
+		assert_vector_approx(segments[1].a, Vector2(600.0, 300.0), 20.0, "Seg 1 start mismatch")
+		assert_vector_approx(segments[1].b, Vector2(600.0, 700.0), 30.0, "Seg 1 hit M2 mismatch")
+		var dir1: Vector2 = (segments[1].b - segments[1].a).normalized()
+		assert_vector_approx(dir1, Vector2.DOWN, 0.001, "Seg 1 direction should be DOWN")
+
+		# Segment 2: horizontal to terminating Wall
+		assert_vector_approx(segments[2].a, Vector2(600.0, 700.0), 30.0, "Seg 2 start mismatch")
+		assert_vector_approx(segments[2].b, Vector2(1200.0, 700.0), 35.0, "Seg 2 hit Wall mismatch")
+		var dir2: Vector2 = (segments[2].b - segments[2].a).normalized()
+		assert_vector_approx(dir2, Vector2.RIGHT, 0.001, "Seg 2 direction should be RIGHT")
+
+	PhysicsServer2D.free_rid(m1_shape)
+	PhysicsServer2D.free_rid(m1_body)
+	PhysicsServer2D.free_rid(m2_shape)
+	PhysicsServer2D.free_rid(m2_body)
+	PhysicsServer2D.free_rid(wall_shape)
+	PhysicsServer2D.free_rid(wall_body)
+	mirror1.free()
+	mirror2.free()
 	wall.free()
 	level.free()
 
