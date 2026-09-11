@@ -105,8 +105,38 @@ func _connect_hud_signals() -> void:
 			hud.snap_toggled.connect(_on_hud_snap_toggled)
 		if hud.has_signal("reset_requested") and not hud.reset_requested.is_connected(reset_level):
 			hud.reset_requested.connect(reset_level)
+		if hud.has_signal("pause_pressed") and not hud.pause_pressed.is_connected(_on_hud_pause_pressed):
+			hud.pause_pressed.connect(_on_hud_pause_pressed)
 		if hud.has_method("set_snap_enabled"):
 			hud.set_snap_enabled(snap_enabled)
+	_connect_pause_menu_signals()
+
+func _connect_pause_menu_signals() -> void:
+	var pause_menu: Node = get_node_or_null("PauseMenu")
+	if pause_menu == null:
+		return
+	if pause_menu.has_signal("resume_requested") and not pause_menu.resume_requested.is_connected(_on_pause_menu_resume):
+		pause_menu.resume_requested.connect(_on_pause_menu_resume)
+	if pause_menu.has_signal("restart_requested") and not pause_menu.restart_requested.is_connected(_on_pause_menu_restart):
+		pause_menu.restart_requested.connect(_on_pause_menu_restart)
+	if pause_menu.has_signal("level_select_requested") and not pause_menu.level_select_requested.is_connected(_on_pause_menu_level_select):
+		pause_menu.level_select_requested.connect(_on_pause_menu_level_select)
+
+func _on_hud_pause_pressed() -> void:
+	var pause_menu: Node = get_node_or_null("PauseMenu")
+	if pause_menu != null and pause_menu.has_method("show_menu"):
+		pause_menu.show_menu()
+
+func _on_pause_menu_resume() -> void:
+	pass  # PauseMenu hides itself; drag stays idle until next touch
+
+func _on_pause_menu_restart() -> void:
+	reset_level()
+
+func _on_pause_menu_level_select() -> void:
+	level_select_requested.emit()
+	if is_inside_tree() and get_tree() != null:
+		get_tree().change_scene_to_file("res://scenes/main.tscn")
 
 func _on_hud_snap_toggled(enabled: bool) -> void:
 	snap_enabled = enabled

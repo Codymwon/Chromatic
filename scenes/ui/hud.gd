@@ -3,6 +3,7 @@ extends CanvasLayer
 
 signal snap_toggled(enabled: bool)
 signal reset_requested
+signal pause_pressed
 
 @export var level_title: String = "Chromatic":
 	set(value):
@@ -14,6 +15,7 @@ var snap_enabled: bool = true
 @onready var title_label: Label = get_node_or_null("TopBar/HBoxContainer/TitleLabel") as Label
 @onready var snap_button: Button = get_node_or_null("TopBar/HBoxContainer/SnapButton") as Button
 @onready var reset_button: Button = get_node_or_null("TopBar/HBoxContainer/ResetButton") as Button
+@onready var pause_button: Button = get_node_or_null("TopBar/HBoxContainer/PauseButton") as Button
 
 func _ready() -> void:
 	_update_title_label()
@@ -22,6 +24,8 @@ func _ready() -> void:
 		snap_button.pressed.connect(_on_snap_button_pressed)
 	if reset_button != null and not reset_button.pressed.is_connected(_on_reset_button_pressed):
 		reset_button.pressed.connect(_on_reset_button_pressed)
+	if pause_button != null and not pause_button.pressed.is_connected(_on_pause_button_pressed):
+		pause_button.pressed.connect(_on_pause_button_pressed)
 
 func set_title(p_title: String) -> void:
 	level_title = p_title
@@ -46,3 +50,6 @@ func _on_snap_button_pressed() -> void:
 
 func _on_reset_button_pressed() -> void:
 	reset_requested.emit()
+
+func _on_pause_button_pressed() -> void:
+	pause_pressed.emit()
