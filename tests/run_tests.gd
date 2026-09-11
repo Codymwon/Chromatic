@@ -15,6 +15,8 @@ const M1TestLevel = preload("res://scenes/level/m1_test_level.gd")
 const M1_LEVEL_SCENE: PackedScene = preload("res://scenes/level/m1_test_level.tscn")
 const M2TestLevel = preload("res://scenes/level/m2_test_level.gd")
 const M2_LEVEL_SCENE: PackedScene = preload("res://scenes/level/m2_test_level.tscn")
+const M3TestLevel = preload("res://scenes/level/m3_test_level.gd")
+const M3_LEVEL_SCENE: PackedScene = preload("res://scenes/level/m3_test_level.tscn")
 
 class MockPrism extends RefCounted:
 	var rotation: float = 0.0
@@ -1156,6 +1158,194 @@ func test_m2_test_level_zero_allocations() -> void:
 
 	assert_eq(renderer.get_child_count(), initial_child_count, "BeamRenderer child count must remain constant (zero runtime allocations)")
 	level.free()
+
+# --- Integration Tests for Prism Test Level (M3 Issue 04) ---
+
+func test_m3_test_level_scene_structure() -> void:
+	var instance: Node = M3_LEVEL_SCENE.instantiate()
+	assert_true(instance != null, "M3 test level should instantiate")
+	if instance == null:
+		return
+
+	var renderer_node: Node = instance.get_node_or_null("BeamRenderer")
+	assert_true(renderer_node is BeamRenderer, "Level should contain BeamRenderer")
+
+	var light_source_node: Node = instance.get_node_or_null("LightSource")
+	assert_true(light_source_node is LightSource, "Level should contain LightSource")
+	if light_source_node is LightSource:
+		assert_vector_approx((light_source_node as LightSource).position, Vector2(200, 400), 0.001, "LightSource position mismatch")
+
+	var prism1_node: Node = instance.get_node_or_null("Prism1")
+	assert_true(prism1_node is Prism, "Level should contain Prism1")
+	if prism1_node is Prism:
+		assert_eq((prism1_node as Prism).collision_layer, 4, "Prism1 collision layer should be 4 (prisms)")
+		assert_vector_approx((prism1_node as Prism).position, Vector2(600, 400), 0.001, "Prism1 position mismatch")
+
+	var prism2_node: Node = instance.get_node_or_null("Prism2")
+	assert_true(prism2_node is Prism, "Level should contain Prism2")
+	if prism2_node is Prism:
+		assert_eq((prism2_node as Prism).collision_layer, 4, "Prism2 collision layer should be 4 (prisms)")
+		assert_vector_approx((prism2_node as Prism).position, Vector2(1000, 400), 0.001, "Prism2 position mismatch")
+
+	var mirror1_node: Node = instance.get_node_or_null("Mirror1")
+	assert_true(mirror1_node is Mirror, "Level should contain Mirror1")
+	if mirror1_node is Mirror:
+		assert_eq((mirror1_node as Mirror).collision_layer, 2, "Mirror1 collision layer should be 2")
+		assert_vector_approx((mirror1_node as Mirror).position, Vector2(1100, 510), 0.001, "Mirror1 position mismatch")
+
+	var wall_node: Node = instance.get_node_or_null("Wall")
+	assert_true(wall_node is Wall, "Level should contain Wall")
+	if wall_node is Wall:
+		assert_eq((wall_node as Wall).collision_layer, 1, "Wall collision layer should be 1")
+		assert_vector_approx((wall_node as Wall).position, Vector2(1400, 400), 0.001, "Wall position mismatch")
+
+	var p_top: Node = instance.get_node_or_null("PerimeterTop")
+	assert_true(p_top is Wall, "Level should contain PerimeterTop")
+	var p_bot: Node = instance.get_node_or_null("PerimeterBottom")
+	assert_true(p_bot is Wall, "Level should contain PerimeterBottom")
+	var p_left: Node = instance.get_node_or_null("PerimeterLeft")
+	assert_true(p_left is Wall, "Level should contain PerimeterLeft")
+	var p_right: Node = instance.get_node_or_null("PerimeterRight")
+	assert_true(p_right is Wall, "Level should contain PerimeterRight")
+
+	instance.free()
+
+func test_m3_test_level_dirty_flag() -> void:
+	var level: M3TestLevel = M3_LEVEL_SCENE.instantiate() as M3TestLevel
+	level._ready()
+	assert_eq(level.is_dirty, true, "Level should start in dirty state")
+	level._process(0.016)
+	assert_eq(level.is_dirty, false, "Level should clear dirty flag after process frame")
+
+	var p1: Prism = level.get_node("Prism1") as Prism
+	assert_true(p1 != null, "Prism1 should exist in level")
+	if p1 != null:
+		p1.rotation += 0.1
+		p1._notification(CanvasItem.NOTIFICATION_TRANSFORM_CHANGED)
+		assert_eq(level.is_dirty, true, "Rotating Prism1 in level should invalidate dirty state")
+
+	level._process(0.016)
+	assert_eq(level.is_dirty, false, "Level should clear dirty flag after re-process")
+
+	var p2: Prism = level.get_node("Prism2") as Prism
+	assert_true(p2 != null, "Prism2 should exist in level")
+	if p2 != null:
+		p2.position += Vector2(10, 0)
+		p2._notification(CanvasItem.NOTIFICATION_TRANSFORM_CHANGED)
+		assert_eq(level.is_dirty, true, "Moving Prism2 in level should invalidate dirty state")
+
+	level._process(0.016)
+	assert_eq(level.is_dirty, false, "Level should clear dirty flag after re-process")
+
+	var m1: Mirror = level.get_node("Mirror1") as Mirror
+	assert_true(m1 != null, "Mirror1 should exist in level")
+	if m1 != null:
+		m1.rotation += 0.1
+		m1._notification(CanvasItem.NOTIFICATION_TRANSFORM_CHANGED)
+		assert_eq(level.is_dirty, true, "Rotating Mirror1 in level should invalidate dirty state")
+
+	level.free()
+
+func test_m3_test_level_physics_dispersion_and_passthrough() -> void:
+	var level: M3TestLevel = M3_LEVEL_SCENE.instantiate() as M3TestLevel
+	var space: PhysicsDirectSpaceState2D = root.world_2d.direct_space_state
+
+	# Prism 1 in physics space at (600, 400) - Area2D on layer 4 (bit 3)
+	var prism1: Prism = Prism.new()
+	prism1.rotation = 0.0
+	var p1_area: RID = PhysicsServer2D.area_create()
+	PhysicsServer2D.area_set_space(p1_area, root.world_2d.space)
+	PhysicsServer2D.area_attach_object_instance_id(p1_area, prism1.get_instance_id())
+	var p1_shape: RID = PhysicsServer2D.rectangle_shape_create()
+	PhysicsServer2D.shape_set_data(p1_shape, Vector2(30.0, 30.0))
+	PhysicsServer2D.area_add_shape(p1_area, p1_shape, Transform2D(0.0, Vector2(600.0, 400.0)))
+	PhysicsServer2D.area_set_collision_layer(p1_area, 4)
+
+	# Prism 2 in physics space at (1000, 400) - Area2D on layer 4 (bit 3)
+	var prism2: Prism = Prism.new()
+	prism2.rotation = 0.0
+	var p2_area: RID = PhysicsServer2D.area_create()
+	PhysicsServer2D.area_set_space(p2_area, root.world_2d.space)
+	PhysicsServer2D.area_attach_object_instance_id(p2_area, prism2.get_instance_id())
+	var p2_shape: RID = PhysicsServer2D.rectangle_shape_create()
+	PhysicsServer2D.shape_set_data(p2_shape, Vector2(30.0, 30.0))
+	PhysicsServer2D.area_add_shape(p2_area, p2_shape, Transform2D(0.0, Vector2(1000.0, 400.0)))
+	PhysicsServer2D.area_set_collision_layer(p2_area, 4)
+
+	# Terminating Wall in physics space at (1400, 400) - StaticBody2D on layer 1 (bit 1)
+	var wall: Wall = Wall.new()
+	var wall_body: RID = PhysicsServer2D.body_create()
+	PhysicsServer2D.body_set_space(wall_body, root.world_2d.space)
+	PhysicsServer2D.body_attach_object_instance_id(wall_body, wall.get_instance_id())
+	var wall_shape: RID = PhysicsServer2D.rectangle_shape_create()
+	PhysicsServer2D.shape_set_data(wall_shape, Vector2(20.0, 100.0))
+	PhysicsServer2D.body_add_shape(wall_body, wall_shape, Transform2D(0.0, Vector2(1400.0, 400.0)))
+	PhysicsServer2D.body_set_collision_layer(wall_body, 1)
+
+	var segments: Array[BeamTypes.Segment] = level.update_beam(space)
+
+	# Expect 5 segments:
+	# 0: White ray hitting Prism1
+	# 1: Red ray (-12 deg) from Prism1 into open space
+	# 2: Green ray (0 deg) from Prism1 hitting Prism2
+	# 3: Green ray passing through Prism2 hitting Wall
+	# 4: Blue ray (+12 deg) from Prism1 into open space
+	assert_eq(segments.size(), 5, "Dispersion and pass-through should produce exactly 5 segments")
+
+	if segments.size() >= 5:
+		# Segment 0: White ray hitting Prism 1
+		assert_eq(segments[0].color, BeamTypes.RayColor.WHITE, "Seg 0 must be WHITE")
+		assert_vector_approx(segments[0].a, Vector2(224.0, 400.0), 0.001, "Seg 0 start mismatch")
+		assert_vector_approx(segments[0].b, Vector2(570.0, 400.0), 5.0, "Seg 0 should hit Prism1 left edge")
+
+		# Segment 1: Red ray (-12 deg) into open space
+		assert_eq(segments[1].color, BeamTypes.RayColor.RED, "Seg 1 must be RED")
+		var r_dir: Vector2 = (segments[1].b - segments[1].a).normalized()
+		assert_vector_approx(r_dir, Vector2.from_angle(deg_to_rad(-12.0)), 0.001, "Red ray direction mismatch")
+
+		# Segment 2: Green ray (0 deg) hitting Prism 2
+		assert_eq(segments[2].color, BeamTypes.RayColor.GREEN, "Seg 2 must be GREEN")
+		assert_vector_approx(segments[2].b, Vector2(970.0, 400.0), 5.0, "Seg 2 should hit Prism2 left edge")
+		var g_dir1: Vector2 = (segments[2].b - segments[2].a).normalized()
+		assert_vector_approx(g_dir1, Vector2.RIGHT, 0.001, "Green ray to Prism2 direction mismatch")
+
+		# Segment 3: Green ray passing through Prism 2 hitting Wall
+		assert_eq(segments[3].color, BeamTypes.RayColor.GREEN, "Seg 3 must be GREEN pass-through")
+		assert_vector_approx(segments[3].b, Vector2(1380.0, 400.0), 5.0, "Seg 3 should terminate at Wall")
+		var g_dir2: Vector2 = (segments[3].b - segments[3].a).normalized()
+		assert_vector_approx(g_dir2, Vector2.RIGHT, 0.001, "Green pass-through direction mismatch")
+
+		# Segment 4: Blue ray (+12 deg) into open space
+		assert_eq(segments[4].color, BeamTypes.RayColor.BLUE, "Seg 4 must be BLUE")
+		var b_dir: Vector2 = (segments[4].b - segments[4].a).normalized()
+		assert_vector_approx(b_dir, Vector2.from_angle(deg_to_rad(12.0)), 0.001, "Blue ray direction mismatch")
+
+	# Clean up physics server resources
+	PhysicsServer2D.free_rid(p1_shape)
+	PhysicsServer2D.free_rid(p1_area)
+	PhysicsServer2D.free_rid(p2_shape)
+	PhysicsServer2D.free_rid(p2_area)
+	PhysicsServer2D.free_rid(wall_shape)
+	PhysicsServer2D.free_rid(wall_body)
+	prism1.free()
+	prism2.free()
+	wall.free()
+	level.free()
+
+func test_m3_test_level_zero_allocations() -> void:
+	var level: M3TestLevel = M3_LEVEL_SCENE.instantiate() as M3TestLevel
+	var space: PhysicsDirectSpaceState2D = root.world_2d.direct_space_state
+	var renderer: BeamRenderer = level.get_node("BeamRenderer") as BeamRenderer
+	renderer._init_pool()
+	var initial_child_count: int = renderer.get_child_count()
+	assert_eq(initial_child_count, 64, "Initial pooled child count should be 64")
+
+	for i in range(10):
+		level.update_beam(space)
+
+	assert_eq(renderer.get_child_count(), initial_child_count, "BeamRenderer child count must remain constant (zero runtime allocations)")
+	level.free()
+
 
 # --- M0 Regression Tests ---
 
