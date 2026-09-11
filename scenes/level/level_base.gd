@@ -75,22 +75,22 @@ func _evaluate_win_condition(delta: float) -> void:
 	else:
 		win_hold_elapsed = 0.0
 
-func get_goal_sinks() -> Array[GoalSink]:
-	var sinks: Array[GoalSink] = []
+func _get_objects_children() -> Array[Node]:
 	var container: Node = get_objects_container()
 	if container == null:
 		container = self
-	for child in container.get_children():
+	return container.get_children()
+
+func get_goal_sinks() -> Array[GoalSink]:
+	var sinks: Array[GoalSink] = []
+	for child in _get_objects_children():
 		if child is GoalSink:
 			sinks.append(child)
 	return sinks
 
 func get_light_sources() -> Array[LightSource]:
 	var sources: Array[LightSource] = []
-	var container: Node = get_objects_container()
-	if container == null:
-		container = self
-	for child in container.get_children():
+	for child in _get_objects_children():
 		if child is LightSource:
 			sources.append(child)
 	return sources
@@ -106,11 +106,6 @@ func update_beams(
 		var world_2d: World2D = get_world_2d()
 		if world_2d != null:
 			space_state = world_2d.direct_space_state
-
-	# Reset all sink states prior to tracing
-	var sinks: Array[GoalSink] = get_goal_sinks()
-	for sink in sinks:
-		sink.set_lit(false)
 
 	if space_state == null or beam_renderer == null:
 		return []
@@ -180,4 +175,28 @@ func update_beams(
 		all_segments.append_array(segments)
 
 	beam_renderer.render_segments(all_segments)
+	var sinks: Array[GoalSink] = get_goal_sinks()
+	_update_sink_illuminations(sinks, all_segments)
 	return all_segments
+
+func _update_sink_illuminations(
+	sinks: Array[GoalSink],
+	segments: Array[BeamTypes.Segment]
+) -> void:
+	for sink in sinks:
+		var matching_hit: bool = false
+		var has_hit: bool = false
+		for seg in segments:
+			if sink.global_position.distance_to(seg.b) <= 26.0:
+				has_hit = true
+				if seg.color == sink.required_color:
+					matching_hit = true
+					break
+
+		if matching_hit:
+			sink.set_lit(true)
+		elif has_hit:
+			sink.set_lit(false)
+			sink.flash_mismatch()
+		else:
+			sink.set_lit(false)
