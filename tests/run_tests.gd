@@ -367,22 +367,16 @@ func test_beam_renderer_chromatic_palette_and_halo_modulation() -> void:
 
 	renderer.render_segments(segs)
 
-	var active_halos := renderer.get_active_halo_lines()
-	var active_cores := renderer.get_active_core_lines()
+	for i in range(4):
+		assert_eq(renderer._halo_lines[i].visible, true, "Halo %d should be visible" % i)
+		assert_eq(renderer._core_lines[i].visible, true, "Core %d should be visible" % i)
+		assert_eq(renderer._core_lines[i].default_color, Color(1.0, 1.0, 1.0, 1.0), "Core %d must remain pure white" % i)
 
-	assert_eq(active_halos.size(), 4, "Should have 4 active halo lines")
-	assert_eq(active_cores.size(), 4, "Should have 4 active core lines")
-
-	if active_halos.size() == 4 and active_cores.size() == 4:
-		# Check halo colors
-		assert_eq(active_halos[0].default_color, Color(1.0, 1.0, 1.0, 1.0), "Seg 0 halo should be WHITE")
-		assert_eq(active_halos[1].default_color, Color(1.0, 0.25, 0.25, 1.0), "Seg 1 halo should be RED")
-		assert_eq(active_halos[2].default_color, Color(0.25, 1.0, 0.35, 1.0), "Seg 2 halo should be GREEN")
-		assert_eq(active_halos[3].default_color, Color(0.25, 0.55, 1.0, 1.0), "Seg 3 halo should be BLUE")
-
-		# Check core colors: always pure white
-		for i in range(4):
-			assert_eq(active_cores[i].default_color, Color(1.0, 1.0, 1.0, 1.0), "Core %d must remain pure white" % i)
+	assert_eq(renderer._halo_lines[0].default_color, Color(1.0, 1.0, 1.0, 1.0), "Seg 0 halo should be WHITE")
+	assert_eq(renderer._halo_lines[1].default_color, Color(1.0, 0.25, 0.25, 1.0), "Seg 1 halo should be RED")
+	assert_eq(renderer._halo_lines[2].default_color, Color(0.25, 1.0, 0.35, 1.0), "Seg 2 halo should be GREEN")
+	assert_eq(renderer._halo_lines[3].default_color, Color(0.25, 0.55, 1.0, 1.0), "Seg 3 halo should be BLUE")
+	assert_eq(renderer._halo_lines[4].visible, false, "Halo 4 should be hidden")
 
 	# Mutate colors in-place to verify dynamic re-tinting without allocations
 	var mutated_segs: Array[BeamTypes.Segment] = [
@@ -391,13 +385,11 @@ func test_beam_renderer_chromatic_palette_and_halo_modulation() -> void:
 	]
 	renderer.render_segments(mutated_segs)
 
-	var re_halos := renderer.get_active_halo_lines()
-	var re_cores := renderer.get_active_core_lines()
-	assert_eq(re_halos.size(), 2, "Should have 2 active halo lines after mutation")
-	assert_eq(re_cores.size(), 2, "Should have 2 active core lines after mutation")
-	if re_halos.size() == 2:
-		assert_eq(re_halos[0].default_color, Color(0.25, 0.55, 1.0, 1.0), "Mutated seg 0 halo should now be BLUE")
-		assert_eq(re_halos[1].default_color, Color(0.25, 1.0, 0.35, 1.0), "Mutated seg 1 halo should now be GREEN")
+	assert_eq(renderer._halo_lines[0].visible, true, "Halo 0 should be visible after mutation")
+	assert_eq(renderer._halo_lines[1].visible, true, "Halo 1 should be visible after mutation")
+	assert_eq(renderer._halo_lines[2].visible, false, "Halo 2 should now be hidden after mutation")
+	assert_eq(renderer._halo_lines[0].default_color, Color(0.25, 0.55, 1.0, 1.0), "Mutated seg 0 halo should now be BLUE")
+	assert_eq(renderer._halo_lines[1].default_color, Color(0.25, 1.0, 0.35, 1.0), "Mutated seg 1 halo should now be GREEN")
 
 	renderer.free()
 
@@ -1272,6 +1264,17 @@ func test_m3_test_level_physics_dispersion_and_passthrough() -> void:
 	PhysicsServer2D.area_add_shape(p2_area, p2_shape, Transform2D(0.0, Vector2(1000.0, 400.0)))
 	PhysicsServer2D.area_set_collision_layer(p2_area, 4)
 
+	# Mirror 1 in physics space at (1100, 510) rotated 45° - StaticBody2D on layer 2 (bit 2)
+	var mirror1: Mirror = Mirror.new()
+	mirror1.rotation = deg_to_rad(45.0)
+	var m1_body: RID = PhysicsServer2D.body_create()
+	PhysicsServer2D.body_set_space(m1_body, root.world_2d.space)
+	PhysicsServer2D.body_attach_object_instance_id(m1_body, mirror1.get_instance_id())
+	var m1_shape: RID = PhysicsServer2D.rectangle_shape_create()
+	PhysicsServer2D.shape_set_data(m1_shape, Vector2(60.0, 8.0))
+	PhysicsServer2D.body_add_shape(m1_body, m1_shape, Transform2D(deg_to_rad(45.0), Vector2(1100.0, 510.0)))
+	PhysicsServer2D.body_set_collision_layer(m1_body, 2)
+
 	# Terminating Wall in physics space at (1400, 400) - StaticBody2D on layer 1 (bit 1)
 	var wall: Wall = Wall.new()
 	var wall_body: RID = PhysicsServer2D.body_create()
@@ -1284,15 +1287,16 @@ func test_m3_test_level_physics_dispersion_and_passthrough() -> void:
 
 	var segments: Array[BeamTypes.Segment] = level.update_beam(space)
 
-	# Expect 5 segments:
+	# Expect 6 segments:
 	# 0: White ray hitting Prism1
 	# 1: Red ray (-12 deg) from Prism1 into open space
 	# 2: Green ray (0 deg) from Prism1 hitting Prism2
 	# 3: Green ray passing through Prism2 hitting Wall
-	# 4: Blue ray (+12 deg) from Prism1 into open space
-	assert_eq(segments.size(), 5, "Dispersion and pass-through should produce exactly 5 segments")
+	# 4: Blue ray (+12 deg) from Prism1 hitting Mirror1
+	# 5: Blue ray reflected off Mirror1 with preserved BLUE color
+	assert_eq(segments.size(), 6, "Dispersion, pass-through, and mirror reflection should produce exactly 6 segments")
 
-	if segments.size() >= 5:
+	if segments.size() >= 6:
 		# Segment 0: White ray hitting Prism 1
 		assert_eq(segments[0].color, BeamTypes.RayColor.WHITE, "Seg 0 must be WHITE")
 		assert_vector_approx(segments[0].a, Vector2(224.0, 400.0), 0.001, "Seg 0 start mismatch")
@@ -1315,20 +1319,30 @@ func test_m3_test_level_physics_dispersion_and_passthrough() -> void:
 		var g_dir2: Vector2 = (segments[3].b - segments[3].a).normalized()
 		assert_vector_approx(g_dir2, Vector2.RIGHT, 0.001, "Green pass-through direction mismatch")
 
-		# Segment 4: Blue ray (+12 deg) into open space
+		# Segment 4: Blue ray (+12 deg) hitting Mirror1
 		assert_eq(segments[4].color, BeamTypes.RayColor.BLUE, "Seg 4 must be BLUE")
-		var b_dir: Vector2 = (segments[4].b - segments[4].a).normalized()
-		assert_vector_approx(b_dir, Vector2.from_angle(deg_to_rad(12.0)), 0.001, "Blue ray direction mismatch")
+		assert_vector_approx(segments[4].b, Vector2(1100.0, 510.0), 15.0, "Seg 4 should hit Mirror1 near (1100, 510)")
+
+		# Segment 5: Blue ray reflected off Mirror 1
+		assert_eq(segments[5].color, BeamTypes.RayColor.BLUE, "Seg 5 reflected ray must preserve BLUE color")
+		var in_blue_dir: Vector2 = Vector2.from_angle(deg_to_rad(12.0)).normalized()
+		var m1_norm: Vector2 = Vector2.UP.rotated(deg_to_rad(45.0)).normalized()
+		var expected_refl_dir: Vector2 = (in_blue_dir - 2.0 * in_blue_dir.dot(m1_norm) * m1_norm).normalized()
+		var out_blue_dir: Vector2 = (segments[5].b - segments[5].a).normalized()
+		assert_vector_approx(out_blue_dir, expected_refl_dir, 0.01, "Reflected Blue ray direction mismatch")
 
 	# Clean up physics server resources
 	PhysicsServer2D.free_rid(p1_shape)
 	PhysicsServer2D.free_rid(p1_area)
 	PhysicsServer2D.free_rid(p2_shape)
 	PhysicsServer2D.free_rid(p2_area)
+	PhysicsServer2D.free_rid(m1_shape)
+	PhysicsServer2D.free_rid(m1_body)
 	PhysicsServer2D.free_rid(wall_shape)
 	PhysicsServer2D.free_rid(wall_body)
 	prism1.free()
 	prism2.free()
+	mirror1.free()
 	wall.free()
 	level.free()
 
