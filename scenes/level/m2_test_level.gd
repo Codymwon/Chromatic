@@ -15,6 +15,9 @@ const Wall = preload("res://scenes/objects/wall.gd")
 var is_dirty: bool = true
 
 func _ready() -> void:
+	for child in get_children():
+		if child is Mirror:
+			child.transformed.connect(mark_dirty)
 	mark_dirty()
 
 func mark_dirty() -> void:
@@ -38,10 +41,9 @@ func update_beam(
 		return []
 
 	if space_state == null and is_inside_tree():
-		if get_world_2d() != null:
-			space_state = get_world_2d().direct_space_state
-		elif get_tree() != null and get_tree().root != null and get_tree().root.world_2d != null:
-			space_state = get_tree().root.world_2d.direct_space_state
+		var world_2d: World2D = get_world_2d()
+		if world_2d != null:
+			space_state = world_2d.direct_space_state
 
 	if space_state == null:
 		return []
@@ -69,14 +71,13 @@ func update_beam(
 		var collider_type: BeamTypes.ColliderType = BeamTypes.ColliderType.WALL
 		var normal: Vector2 = result.get("normal", Vector2.ZERO)
 
-		if collider_obj != null:
-			if collider_obj is Mirror or collider_obj.has_method("get_facing_normal"):
-				collider_type = BeamTypes.ColliderType.MIRROR
+		if collider_obj is Mirror:
+			collider_type = BeamTypes.ColliderType.MIRROR
+			normal = collider_obj.get_facing_normal()
+		elif collider_obj != null and "collider_type" in collider_obj:
+			collider_type = collider_obj.collider_type
+			if collider_type == BeamTypes.ColliderType.MIRROR and collider_obj.has_method("get_facing_normal"):
 				normal = collider_obj.get_facing_normal()
-			elif "collider_type" in collider_obj:
-				collider_type = collider_obj.collider_type
-				if collider_type == BeamTypes.ColliderType.MIRROR and collider_obj.has_method("get_facing_normal"):
-					normal = collider_obj.get_facing_normal()
 
 		var hit := BeamTypes.RayHit.new(
 			result["position"],

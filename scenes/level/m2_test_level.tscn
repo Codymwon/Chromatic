@@ -24,3 +24,17 @@ rotation = 0.785398
 
 [node name="Wall" parent="." instance=ExtResource("5_wall")]
 position = Vector2(1200, 700)
+
+[node name="PerimeterTop" parent="." instance=ExtResource("5_wall")]
+position = Vector2(960, 20)
+rotation = 1.5708
+
+[node name="PerimeterBottom" parent="." instance=ExtResource("5_wall")]
+position = Vector2(960, 1060)
+rotation = 1.5708
+
+[node name="PerimeterLeft" parent="." instance=ExtResource("5_wall")]
+position = Vector2(20, 540)
+
+[node name="PerimeterRight" parent="." instance=ExtResource("5_wall")]
+position = Vector2(1900, 540)
