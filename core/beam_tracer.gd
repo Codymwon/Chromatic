@@ -33,6 +33,25 @@ static func trace(
 		if hit.collider_type == BeamTypes.ColliderType.WALL:
 			# Wall absorbs light; stop tracing
 			break
+		elif hit.collider_type == BeamTypes.ColliderType.MIRROR:
+			var normal: Vector2 = hit.normal.normalized()
+			if normal.is_zero_approx():
+				break
+
+			var dot_prod: float = current_dir.dot(normal)
+			if abs(dot_prod) < GameConstants.GLANCING_DOT_THRESHOLD:
+				# Glancing incidence (< ~2.86 deg) is absorbed and terminates at hit.point
+				break
+
+			var reflected_dir: Vector2 = (current_dir - 2.0 * dot_prod * normal).normalized()
+			if reflected_dir.is_zero_approx():
+				break
+
+			current_origin = hit.point + reflected_dir * GameConstants.RAY_STEP_NUDGE
+			current_dir = reflected_dir
+			current_exclude = exclude_rids.duplicate()
+			if hit.rid.is_valid():
+				current_exclude.append(hit.rid)
 		else:
 			# Default termination for unhandled or absorbing collision
 			break
