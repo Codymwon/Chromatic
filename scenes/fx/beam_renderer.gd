@@ -19,9 +19,23 @@ static func get_palette_color(p_color: BeamTypes.RayColor) -> Color:
 var _halo_lines: Array[Line2D] = []
 var _core_lines: Array[Line2D] = []
 var _halo_material: CanvasItemMaterial = null
+var _pulse_time: float = 0.0
+var _active_count: int = 0
 
 func _ready() -> void:
 	_init_pool()
+
+func _process(delta: float) -> void:
+	if _active_count <= 0:
+		return
+	_pulse_time += delta
+	var pulse_width: float = GameConstants.BEAM_WIDTH + sin(_pulse_time * 6.0) * 0.5
+	var pulse_alpha: float = 0.875 + sin(_pulse_time * 8.0) * 0.075
+
+	for i in range(_active_count):
+		var halo: Line2D = _halo_lines[i]
+		halo.width = pulse_width
+		halo.modulate.a = pulse_alpha
 
 func _init_pool() -> void:
 	if not _halo_lines.is_empty():
@@ -54,9 +68,9 @@ func render_segments(segments: Array[BeamTypes.Segment]) -> void:
 	if _halo_lines.is_empty():
 		_init_pool()
 
-	var active_count: int = mini(segments.size(), pool_size)
+	_active_count = mini(segments.size(), pool_size)
 
-	for i in range(active_count):
+	for i in range(_active_count):
 		var seg: BeamTypes.Segment = segments[i]
 		var halo: Line2D = _halo_lines[i]
 		var core: Line2D = _core_lines[i]
@@ -70,8 +84,11 @@ func render_segments(segments: Array[BeamTypes.Segment]) -> void:
 		core.default_color = Color.WHITE
 		core.visible = true
 
-	for i in range(active_count, pool_size):
-		_halo_lines[i].visible = false
+	for i in range(_active_count, pool_size):
+		var halo_hidden: Line2D = _halo_lines[i]
+		halo_hidden.visible = false
+		halo_hidden.width = GameConstants.BEAM_WIDTH
+		halo_hidden.modulate.a = 1.0
 		_core_lines[i].visible = false
 
 

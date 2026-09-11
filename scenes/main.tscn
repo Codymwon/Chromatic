@@ -1,6 +1,7 @@
 [gd_scene format=3 uid="uid://d1gscv5l8main"]
 
 [ext_resource type="Script" path="res://scenes/main.gd" id="1_main"]
+[ext_resource type="PackedScene" path="res://scenes/fx/world_environment.tscn" id="2_env"]
 
 [node name="Main" type="Control"]
 layout_mode = 3
@@ -10,6 +11,8 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 script = ExtResource("1_main")
+
+[node name="WorldEnvironment" parent="." instance=ExtResource("2_env")]
 
 [node name="Background" type="ColorRect" parent="."]
 layout_mode = 1

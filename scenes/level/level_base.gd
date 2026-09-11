@@ -105,8 +105,46 @@ func _connect_hud_signals() -> void:
 			hud.snap_toggled.connect(_on_hud_snap_toggled)
 		if hud.has_signal("reset_requested") and not hud.reset_requested.is_connected(reset_level):
 			hud.reset_requested.connect(reset_level)
+		if hud.has_signal("pause_pressed") and not hud.pause_pressed.is_connected(_on_hud_pause_pressed):
+			hud.pause_pressed.connect(_on_hud_pause_pressed)
 		if hud.has_method("set_snap_enabled"):
 			hud.set_snap_enabled(snap_enabled)
+	_connect_pause_menu_signals()
+
+func _connect_pause_menu_signals() -> void:
+	var pause_menu: Node = get_node_or_null("PauseMenu")
+	if pause_menu == null:
+		return
+	if pause_menu.has_signal("resume_requested") and not pause_menu.resume_requested.is_connected(_on_pause_menu_resume):
+		pause_menu.resume_requested.connect(_on_pause_menu_resume)
+	if pause_menu.has_signal("restart_requested") and not pause_menu.restart_requested.is_connected(_on_pause_menu_restart):
+		pause_menu.restart_requested.connect(_on_pause_menu_restart)
+	if pause_menu.has_signal("level_select_requested") and not pause_menu.level_select_requested.is_connected(_on_pause_menu_level_select):
+		pause_menu.level_select_requested.connect(_on_pause_menu_level_select)
+
+func _on_hud_pause_pressed() -> void:
+	var pause_menu: Node = get_node_or_null("PauseMenu")
+	if pause_menu != null and pause_menu.has_method("show_menu"):
+		pause_menu.show_menu()
+	_release_drag()  # Drop any active drag so the piece doesn't lurch on resume
+	if is_inside_tree() and get_tree() != null:
+		get_tree().paused = true
+
+func _on_pause_menu_resume() -> void:
+	if is_inside_tree() and get_tree() != null:
+		get_tree().paused = false
+
+func _on_pause_menu_restart() -> void:
+	if is_inside_tree() and get_tree() != null:
+		get_tree().paused = false
+	reset_level()
+
+func _on_pause_menu_level_select() -> void:
+	if is_inside_tree() and get_tree() != null:
+		get_tree().paused = false
+	level_select_requested.emit()
+	if is_inside_tree() and get_tree() != null:
+		get_tree().change_scene_to_file("res://scenes/main.tscn")
 
 func _on_hud_snap_toggled(enabled: bool) -> void:
 	snap_enabled = enabled
@@ -397,10 +435,33 @@ func _evaluate_win_condition(delta: float) -> void:
 		win_hold_elapsed += delta
 		if win_hold_elapsed >= GameConstants.WIN_HOLD_TIME:
 			is_completed = true
+			_trigger_victory_feedback()
 			level_completed.emit()
-			_show_win_modal()
+			_trigger_victory_burst_and_modal()
 	else:
 		win_hold_elapsed = 0.0
+
+func _trigger_victory_feedback() -> void:
+	if not is_inside_tree():
+		return
+	var sound_manager: Node = get_node_or_null("/root/SoundManager")
+	if sound_manager and sound_manager.has_method("play_victory"):
+		sound_manager.play_victory()
+
+	var game_state: Node = get_node_or_null("/root/GameState")
+	if game_state and game_state.has_method("trigger_haptic_victory"):
+		game_state.trigger_haptic_victory()
+	elif OS.has_feature("mobile") and Input.has_method("vibrate_handheld"):
+		Input.vibrate_handheld(80)
+
+func _trigger_victory_burst_and_modal() -> void:
+	var victory_burst: Node = get_node_or_null("VictoryBurst")
+	if victory_burst != null and victory_burst.has_method("play_burst"):
+		if victory_burst.has_signal("burst_finished") and not victory_burst.burst_finished.is_connected(_show_win_modal):
+			victory_burst.burst_finished.connect(_show_win_modal, CONNECT_ONE_SHOT)
+		victory_burst.play_burst()
+	else:
+		_show_win_modal()
 
 func _show_win_modal() -> void:
 	if win_overlay == null:

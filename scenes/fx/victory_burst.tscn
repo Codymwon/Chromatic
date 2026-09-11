@@ -1,0 +1,23 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scenes/fx/victory_burst.gd" id="1_m7xur"]
+
+[sub_resource type="CanvasItemMaterial" id="CanvasItemMaterial_hbw6i"]
+blend_mode = 1
+
+[node name="VictoryBurst" type="CanvasLayer"]
+layer = 5
+script = ExtResource("1_m7xur")
+
+[node name="FlashRect" type="ColorRect" parent="." unique_id=739597599]
+material = SubResource("CanvasItemMaterial_hbw6i")
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
+
+[node name="ShockwaveRing" type="Line2D" parent="." unique_id=382389352]
+material = SubResource("CanvasItemMaterial_hbw6i")
+position = Vector2(960, 540)
+points = PackedVector2Array(24, 0, 23.538845, 4.682168, 22.173107, 9.184402, 19.95527, 13.333686, 16.970562, 16.970562, 13.333686, 19.95527, 9.184402, 22.173107, 4.682168, 23.538845, 1.4695762e-15, 24, -4.682168, 23.538845, -9.184402, 22.173107, -13.333686, 19.95527, -16.970562, 16.970562, -19.95527, 13.333686, -22.173107, 9.184402, -23.538845, 4.682168, -24, 2.9391524e-15, -23.538845, -4.682168, -22.173107, -9.184402, -19.95527, -13.333686, -16.970562, -16.970562, -13.333686, -19.95527, -9.184402, -22.173107, -4.682168, -23.538845, -4.4087286e-15, -24, 4.682168, -23.538845, 9.184402, -22.173107, 13.333686, -19.95527, 16.970562, -16.970562, 19.95527, -13.333686, 22.173107, -9.184402, 23.538845, -4.682168, 24, -5.878305e-15)
+width = 6.0

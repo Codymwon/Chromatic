@@ -5,20 +5,32 @@
 [sub_resource type="CircleShape2D" id="CircleShape2D_sink"]
 radius = 24.0
 
-[node name="GoalSink" type="Area2D"]
+[node name="GoalSink" type="Area2D" unique_id=688637212]
 collision_layer = 8
 collision_mask = 0
 script = ExtResource("1_sink")
 
-[node name="CollisionShape2D" type="CollisionShape2D" parent="."]
+[node name="CollisionShape2D" type="CollisionShape2D" parent="." unique_id=194489498]
 shape = SubResource("CircleShape2D_sink")
 
-[node name="ReceptacleRing" type="Line2D" parent="."]
+[node name="ReceptacleRing" type="Line2D" parent="." unique_id=851583675]
 points = PackedVector2Array(24, 0, 22.17, 9.18, 16.97, 16.97, 9.18, 22.17, 0, 24, -9.18, 22.17, -16.97, 16.97, -22.17, 9.18, -24, 0, -22.17, -9.18, -16.97, -16.97, -9.18, -22.17, 0, -24, 9.18, -22.17, 16.97, -16.97, 22.17, -9.18, 24, 0)
 width = 4.0
-default_color = Color(1, 1, 1, 1)
 
-[node name="InnerCore" type="Polygon2D" parent="."]
+[node name="InnerCore" type="Polygon2D" parent="." unique_id=307685779]
 visible = false
-color = Color(1, 1, 1, 1)
 polygon = PackedVector2Array(14, 0, 12.93, 5.36, 9.9, 9.9, 5.36, 12.93, 0, 14, -5.36, 12.93, -9.9, 9.9, -12.93, 5.36, -14, 0, -12.93, -5.36, -9.9, -9.9, -5.36, -12.93, 0, -14, 5.36, -12.93, 9.9, -9.9, 12.93, -5.36)
+
+[node name="SparkleParticles" type="CPUParticles2D" parent="." unique_id=394995240]
+emitting = false
+amount = 20
+lifetime = 0.6
+emission_shape = 1
+emission_sphere_radius = 16.0
+spread = 180.0
+gravity = Vector2(0, 0)
+initial_velocity_min = 20.0
+initial_velocity_max = 50.0
+scale_amount_min = 2.0
+scale_amount_max = 4.0
+color = Color(1, 1, 1, 0.8)

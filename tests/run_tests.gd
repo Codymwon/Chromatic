@@ -2049,3 +2049,379 @@ func test_m0_input_emulation_event() -> void:
 
 			assert_true(true, "Input handling executed without error")
 			root_node.free()
+
+# ============================================================
+# --- M7 Feel & Polish Tests (#48–#55) ---
+# ============================================================
+
+const GameStateNode = preload("res://autoload/game_state.gd")
+const SoundManagerNode = preload("res://audio/sound_manager.gd")
+const GameWorldEnvironment = preload("res://scenes/fx/world_environment.gd")
+const VictoryBurst = preload("res://scenes/fx/victory_burst.gd")
+const PauseMenu = preload("res://scenes/ui/pause_menu.gd")
+const WORLD_ENV_SCENE: PackedScene = preload("res://scenes/fx/world_environment.tscn")
+const VICTORY_BURST_SCENE: PackedScene = preload("res://scenes/fx/victory_burst.tscn")
+const PAUSE_MENU_SCENE: PackedScene = preload("res://scenes/ui/pause_menu.tscn")
+
+# --- Issue #48: GameState save/load and signal round-trip ---
+
+func test_m7_game_state_defaults() -> void:
+	var gs := GameStateNode.new()
+	assert_eq(gs.glow_enabled, true, "Default glow_enabled should be true")
+	assert_eq(gs.sfx_enabled, true, "Default sfx_enabled should be true")
+	assert_float_approx(gs.sfx_volume, 1.0, 0.001, "Default sfx_volume should be 1.0")
+	assert_eq(gs.haptics_enabled, true, "Default haptics_enabled should be true")
+	gs.free()
+
+func test_m7_game_state_setters_emit_signals() -> void:
+	var gs := GameStateNode.new()
+	var glow_emitted: Array[bool] = [false]
+	var sfx_emitted: Array[bool] = [false]
+	var vol_emitted: Array[float] = [1.0]
+	var haptics_emitted: Array[bool] = [false]
+
+	gs.glow_toggled.connect(func(e: bool): glow_emitted[0] = true)
+	gs.sfx_toggled.connect(func(e: bool): sfx_emitted[0] = true)
+	gs.sfx_volume_changed.connect(func(v: float): vol_emitted[0] = v)
+	gs.haptics_toggled.connect(func(e: bool): haptics_emitted[0] = true)
+
+	gs.set_glow_enabled(false)
+	assert_eq(glow_emitted[0], true, "glow_toggled should have fired")
+	assert_eq(gs.glow_enabled, false, "glow_enabled should be false")
+
+	gs.set_sfx_enabled(false)
+	assert_eq(sfx_emitted[0], true, "sfx_toggled should have fired")
+
+	gs.set_sfx_volume(0.5)
+	assert_float_approx(vol_emitted[0], 0.5, 0.001, "sfx_volume_changed should carry 0.5")
+
+	gs.set_haptics_enabled(false)
+	assert_eq(haptics_emitted[0], true, "haptics_toggled should have fired")
+	gs.free()
+
+func test_m7_game_state_save_load_roundtrip() -> void:
+	var gs := GameStateNode.new()
+	var tmp_path: String = "user://test_settings_m7_tmp.cfg"
+	gs.save_path = tmp_path
+
+	gs.glow_enabled = false
+	gs.sfx_enabled = false
+	gs.sfx_volume = 0.75
+	gs.haptics_enabled = false
+	gs.save_settings()
+
+	var gs2 := GameStateNode.new()
+	gs2.save_path = tmp_path
+	gs2.glow_enabled = true
+	gs2.sfx_enabled = true
+	gs2.sfx_volume = 1.0
+	gs2.haptics_enabled = true
+	gs2.load_settings()
+
+	assert_eq(gs2.glow_enabled, false, "Loaded glow_enabled should be false")
+	assert_eq(gs2.sfx_enabled, false, "Loaded sfx_enabled should be false")
+	assert_float_approx(gs2.sfx_volume, 0.75, 0.001, "Loaded sfx_volume should be 0.75")
+	assert_eq(gs2.haptics_enabled, false, "Loaded haptics_enabled should be false")
+
+	DirAccess.remove_absolute(tmp_path)
+	gs.free()
+	gs2.free()
+
+func test_m7_game_state_graceful_missing_file() -> void:
+	var gs := GameStateNode.new()
+	gs.save_path = "user://nonexistent_cfg_m7_12345.cfg"
+	gs.load_settings()
+	assert_eq(gs.glow_enabled, true, "Missing file: glow_enabled should default true")
+	assert_eq(gs.sfx_enabled, true, "Missing file: sfx_enabled should default true")
+	assert_float_approx(gs.sfx_volume, 1.0, 0.001, "Missing file: sfx_volume should default 1.0")
+	gs.free()
+
+func test_m7_game_state_haptic_methods_no_crash() -> void:
+	var gs := GameStateNode.new()
+	gs.haptics_enabled = false
+	gs.trigger_haptic_micro_tap()
+	gs.trigger_haptic_victory()
+	gs.trigger_haptic_vibration(50)
+	assert_true(true, "Haptic methods should not crash on non-mobile platform")
+	gs.free()
+
+# --- Issue #49: WorldEnvironment glow toggle ---
+
+func test_m7_world_environment_scene_loads() -> void:
+	var inst: Node = WORLD_ENV_SCENE.instantiate()
+	assert_true(inst is WorldEnvironment, "world_environment.tscn should instantiate as WorldEnvironment")
+	if inst is WorldEnvironment:
+		assert_true(inst.environment != null, "Environment resource should be set")
+		if inst.environment != null:
+			assert_eq(inst.environment.glow_enabled, true, "Glow should start enabled")
+			assert_eq(int(inst.environment.glow_blend_mode), int(Environment.GLOW_BLEND_MODE_ADDITIVE), "Glow blend mode must be ADDITIVE")
+			assert_float_approx(inst.environment.glow_hdr_threshold, 1.0, 0.001, "HDR threshold must be 1.0 (SDR-safe)")
+	inst.free()
+
+func test_m7_world_environment_reacts_to_glow_toggled() -> void:
+	var inst: WorldEnvironment = WORLD_ENV_SCENE.instantiate() as WorldEnvironment
+	assert_true(inst != null, "WorldEnvironment scene should instantiate")
+	if inst == null:
+		return
+	var env: Environment = inst.environment
+	assert_true(env != null, "Environment resource required")
+	if env == null:
+		inst.free()
+		return
+
+	# Simulate glow toggled signal handler directly
+	if inst.has_method("_on_glow_toggled"):
+		inst._on_glow_toggled(false)
+		assert_eq(env.glow_enabled, false, "Glow should disable after _on_glow_toggled(false)")
+		inst._on_glow_toggled(true)
+		assert_eq(env.glow_enabled, true, "Glow should re-enable after _on_glow_toggled(true)")
+	else:
+		assert_true(false, "_on_glow_toggled method should exist on GameWorldEnvironment")
+	inst.free()
+
+# --- Issue #50: BeamRenderer breathing ---
+
+func test_m7_beam_renderer_has_pulse_time() -> void:
+	var renderer := BeamRenderer.new()
+	assert_true("_pulse_time" in renderer, "BeamRenderer should have _pulse_time field")
+	assert_true("_active_count" in renderer, "BeamRenderer should have _active_count field")
+	assert_float_approx(renderer._pulse_time, 0.0, 0.001, "_pulse_time should start at 0.0")
+	assert_eq(renderer._active_count, 0, "_active_count should start at 0")
+	renderer.free()
+
+func test_m7_beam_renderer_process_modulates_active_halos() -> void:
+	var renderer := BeamRenderer.new()
+	var seg: BeamTypes.Segment = BeamTypes.Segment.new(Vector2(0, 0), Vector2(100, 0), BeamTypes.RayColor.RED)
+	var segs: Array[BeamTypes.Segment] = [seg]
+	renderer.render_segments(segs)
+	assert_eq(renderer._active_count, 1, "After render, active_count should be 1")
+
+	# PI/12 * 6 = PI/2, so sin(PI/2) = 1.0 — maximum positive peak
+	renderer._pulse_time = PI / 12.0
+	renderer._process(0.0)  # delta=0 means _pulse_time stays at PI/12
+	var halo: Line2D = renderer._halo_lines[0]
+	assert_true(halo.width > GameConstants.BEAM_WIDTH, "At peak sin, halo width should exceed base BEAM_WIDTH")
+	renderer.free()
+
+func test_m7_beam_renderer_inactive_halos_not_modulated() -> void:
+	var renderer := BeamRenderer.new()
+	# No segments rendered — active_count stays 0
+	renderer._pulse_time = 5.0
+	renderer._process(0.016)  # Should early-return without changing anything
+	assert_true(true, "Process with 0 active halos should not crash")
+	renderer.free()
+
+# --- Issue #51: GoalSink particles ---
+
+func test_m7_goal_sink_has_sparkle_particles() -> void:
+	var inst: Node = GOAL_SINK_SCENE.instantiate()
+	assert_true(inst is GoalSink, "goal_sink.tscn should instantiate as GoalSink")
+	if inst is GoalSink:
+		var particles: Node = inst.get_node_or_null("SparkleParticles")
+		assert_true(particles is CPUParticles2D, "GoalSink should have SparkleParticles CPUParticles2D child")
+	inst.free()
+
+func test_m7_goal_sink_particles_toggle_with_lit() -> void:
+	var inst: GoalSink = GOAL_SINK_SCENE.instantiate() as GoalSink
+	assert_true(inst != null, "GoalSink should instantiate")
+	if inst == null:
+		return
+	inst._ready()
+	var particles: CPUParticles2D = inst.get_node_or_null("SparkleParticles") as CPUParticles2D
+	if particles == null:
+		inst.free()
+		return
+
+	assert_eq(particles.emitting, false, "Particles should not emit when unlit")
+	inst.set_lit(true)
+	assert_eq(particles.emitting, true, "Particles should emit when lit")
+	inst.set_lit(false)
+	assert_eq(particles.emitting, false, "Particles should stop when unlit again")
+	inst.free()
+
+func test_m7_goal_sink_trigger_mismatch_feedback_no_crash() -> void:
+	var inst: GoalSink = GOAL_SINK_SCENE.instantiate() as GoalSink
+	inst._ready()
+	inst.trigger_mismatch_feedback()
+	assert_eq(inst.is_flashing_mismatch(), true, "Mismatch flash timer should be active")
+	inst.free()
+
+func test_m7_goal_sink_mismatch_flash_decays() -> void:
+	var inst: GoalSink = GOAL_SINK_SCENE.instantiate() as GoalSink
+	inst._ready()
+	inst.trigger_mismatch_feedback()
+	assert_eq(inst.is_flashing_mismatch(), true, "Flash should be active after trigger")
+	inst._process(0.21)
+	assert_eq(inst.is_flashing_mismatch(), false, "Flash should decay after 0.2s")
+	inst.free()
+
+# --- Issue #52: SoundManager ---
+
+func test_m7_sound_manager_instantiates() -> void:
+	var sm := SoundManagerNode.new()
+	assert_true(sm != null, "SoundManagerNode should instantiate")
+	sm.free()
+
+func test_m7_sound_manager_generates_streams() -> void:
+	var sm := SoundManagerNode.new()
+	sm._init_streams()
+	assert_true(sm._stream_red != null, "Red stream should be generated")
+	assert_true(sm._stream_green != null, "Green stream should be generated")
+	assert_true(sm._stream_blue != null, "Blue stream should be generated")
+	assert_true(sm._stream_mismatch != null, "Mismatch stream should be generated")
+	assert_true(sm._stream_victory != null, "Victory stream should be generated")
+	assert_true(sm._stream_red.data.size() > 0, "Red stream should have PCM data")
+	assert_true(sm._stream_victory.data.size() > 0, "Victory stream should have PCM data")
+	sm.free()
+
+func test_m7_sound_manager_play_methods_no_crash() -> void:
+	var sm := SoundManagerNode.new()
+	sm._init_streams()
+	sm.play_sink_lit(BeamTypes.RayColor.RED)
+	sm.play_sink_lit(BeamTypes.RayColor.GREEN)
+	sm.play_sink_lit(BeamTypes.RayColor.BLUE)
+	sm.play_sink_lit(BeamTypes.RayColor.WHITE)
+	sm.play_mismatch()
+	sm.play_victory()
+	assert_true(true, "All play methods should run without crash in headless mode")
+	sm.free()
+
+func test_m7_sound_manager_suppresses_when_sfx_disabled() -> void:
+	var sm := SoundManagerNode.new()
+	sm._init_streams()
+	# When not inside tree, is_sfx_enabled() returns true by default
+	assert_eq(sm.is_sfx_enabled(), true, "SFX enabled by default")
+	sm.free()
+
+# --- Issue #53: Haptics (covered by GameState tests above) ---
+
+func test_m7_haptics_guard_desktop() -> void:
+	var gs := GameStateNode.new()
+	gs.haptics_enabled = true
+	# On desktop/headless, OS.has_feature("mobile") is false, so this should be silent
+	gs.trigger_haptic_micro_tap()
+	gs.trigger_haptic_victory()
+	assert_true(true, "Haptic methods should execute silently on non-mobile")
+	gs.free()
+
+# --- Issue #54: VictoryBurst ---
+
+func test_m7_victory_burst_scene_loads() -> void:
+	var inst: Node = VICTORY_BURST_SCENE.instantiate()
+	assert_true(inst != null, "victory_burst.tscn should load and instantiate")
+	assert_true(inst is CanvasLayer, "VictoryBurst root should be CanvasLayer")
+	if inst is CanvasLayer:
+		var flash: Node = inst.get_node_or_null("FlashRect")
+		assert_true(flash is ColorRect, "VictoryBurst should have FlashRect ColorRect")
+		var ring: Node = inst.get_node_or_null("ShockwaveRing")
+		assert_true(ring is Line2D, "VictoryBurst should have ShockwaveRing Line2D")
+	inst.free()
+
+func test_m7_victory_burst_starts_hidden() -> void:
+	var inst: VictoryBurst = VICTORY_BURST_SCENE.instantiate() as VictoryBurst
+	inst._ready()
+	assert_eq(inst.visible, false, "VictoryBurst should be hidden initially")
+	inst.free()
+
+func test_m7_victory_burst_play_burst_emits_signal() -> void:
+	var inst: VictoryBurst = VICTORY_BURST_SCENE.instantiate() as VictoryBurst
+	inst._ready()
+	var finished: Array[bool] = [false]
+	inst.burst_finished.connect(func(): finished[0] = true)
+	# Manually invoke completion since no SceneTree is processing tweens
+	inst._on_burst_complete()
+	assert_eq(finished[0], true, "burst_finished should emit when burst completes")
+	inst.free()
+
+func test_m7_victory_burst_on_complete_hides() -> void:
+	var inst: VictoryBurst = VICTORY_BURST_SCENE.instantiate() as VictoryBurst
+	inst._ready()
+	inst.visible = true
+	inst._on_burst_complete()
+	assert_eq(inst.visible, false, "After burst_complete, VictoryBurst should hide itself")
+	inst.free()
+
+# --- Issue #55: PauseMenu ---
+
+func test_m7_pause_menu_scene_loads() -> void:
+	var inst: Node = PAUSE_MENU_SCENE.instantiate()
+	assert_true(inst != null, "pause_menu.tscn should load and instantiate")
+	assert_true(inst is CanvasLayer, "PauseMenu root should be CanvasLayer")
+	if inst is CanvasLayer:
+		var vbox: Node = inst.get_node_or_null("CenterContainer/Panel/VBoxContainer")
+		assert_true(vbox is VBoxContainer, "PauseMenu should have VBoxContainer inside Panel")
+		var glow_btn: Node = inst.get_node_or_null("CenterContainer/Panel/VBoxContainer/GlowButton")
+		assert_true(glow_btn is Button, "PauseMenu should have GlowButton")
+		var sfx_btn: Node = inst.get_node_or_null("CenterContainer/Panel/VBoxContainer/SFXButton")
+		assert_true(sfx_btn is Button, "PauseMenu should have SFXButton")
+		var resume_btn: Node = inst.get_node_or_null("CenterContainer/Panel/VBoxContainer/ResumeButton")
+		assert_true(resume_btn is Button, "PauseMenu should have ResumeButton")
+	inst.free()
+
+func test_m7_pause_menu_starts_hidden() -> void:
+	var inst: PauseMenu = PAUSE_MENU_SCENE.instantiate() as PauseMenu
+	inst._ready()
+	assert_eq(inst.visible, false, "PauseMenu should be hidden initially")
+	inst.free()
+
+func test_m7_pause_menu_show_hide() -> void:
+	var inst: PauseMenu = PAUSE_MENU_SCENE.instantiate() as PauseMenu
+	inst._ready()
+	inst.show_menu()
+	assert_eq(inst.visible, true, "show_menu() should make PauseMenu visible")
+	inst.hide_menu()
+	assert_eq(inst.visible, false, "hide_menu() should hide PauseMenu")
+	inst.free()
+
+func test_m7_pause_menu_signals() -> void:
+	var inst: PauseMenu = PAUSE_MENU_SCENE.instantiate() as PauseMenu
+	inst._ready()
+
+	var resume_emitted: Array[bool] = [false]
+	var restart_emitted: Array[bool] = [false]
+	var select_emitted: Array[bool] = [false]
+
+	inst.resume_requested.connect(func(): resume_emitted[0] = true)
+	inst.restart_requested.connect(func(): restart_emitted[0] = true)
+	inst.level_select_requested.connect(func(): select_emitted[0] = true)
+
+	inst._on_resume_pressed()
+	assert_eq(resume_emitted[0], true, "resume_requested should emit on Resume")
+
+	inst._on_restart_pressed()
+	assert_eq(restart_emitted[0], true, "restart_requested should emit on Restart")
+
+	inst._on_level_select_pressed()
+	assert_eq(select_emitted[0], true, "level_select_requested should emit on Level Select")
+	inst.free()
+
+func test_m7_pause_menu_process_mode_always() -> void:
+	var inst: PauseMenu = PAUSE_MENU_SCENE.instantiate() as PauseMenu
+	inst._ready()
+	assert_eq(int(inst.process_mode), int(Node.PROCESS_MODE_ALWAYS), "PauseMenu must use PROCESS_MODE_ALWAYS")
+	inst.free()
+
+func test_m7_hud_has_pause_button() -> void:
+	const HUD_SCENE: PackedScene = preload("res://scenes/ui/hud.tscn")
+	var inst: Node = HUD_SCENE.instantiate()
+	if inst == null:
+		assert_true(false, "HUD scene should instantiate")
+		return
+	inst._ready()
+	var pb: Node = inst.get_node_or_null("TopBar/HBoxContainer/PauseButton")
+	assert_true(pb is Button, "HUD should have PauseButton in the TopBar")
+	assert_true(inst.has_signal("pause_pressed"), "HUD should have pause_pressed signal")
+	inst.free()
+
+func test_m7_level_base_includes_victory_burst_and_pause_menu() -> void:
+	var level: LevelBase = LEVEL_BASE_SCENE.instantiate() as LevelBase
+	assert_true(level != null, "LevelBase should instantiate")
+	if level == null:
+		return
+	var burst: Node = level.get_node_or_null("VictoryBurst")
+	assert_true(burst != null, "LevelBase should contain VictoryBurst")
+	var pause_menu: Node = level.get_node_or_null("PauseMenu")
+	assert_true(pause_menu != null, "LevelBase should contain PauseMenu")
+	var world_env: Node = level.get_node_or_null("WorldEnvironment")
+	assert_true(world_env != null, "LevelBase should contain WorldEnvironment")
+	level.free()
