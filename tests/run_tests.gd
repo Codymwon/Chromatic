@@ -7,6 +7,8 @@ const BeamRenderer = preload("res://scenes/fx/beam_renderer.gd")
 const LightSource = preload("res://scenes/objects/light_source.gd")
 const Wall = preload("res://scenes/objects/wall.gd")
 const WALL_SCENE: PackedScene = preload("res://scenes/objects/wall.tscn")
+const Mirror = preload("res://scenes/objects/mirror.gd")
+const MIRROR_SCENE: PackedScene = preload("res://scenes/objects/mirror.tscn")
 const M1TestLevel = preload("res://scenes/level/m1_test_level.gd")
 const M1_LEVEL_SCENE: PackedScene = preload("res://scenes/level/m1_test_level.tscn")
 
@@ -478,6 +480,158 @@ func test_wall_ray_termination() -> void:
 		assert_vector_approx(segments[0].a, Vector2(50.0, 100.0), 0.001, "Segment start should be ray origin")
 		assert_vector_approx(segments[0].b, hit_point, 0.001, "Segment end should terminate at Wall hit point")
 		assert_eq(segments[0].color, BeamTypes.RayColor.WHITE, "Segment color should match incident ray color")
+
+# --- Unit Tests for Mirror Optical Object & Reflection (M2 Issue 02) ---
+
+func test_mirror_scene_instantiation() -> void:
+	var mirror: Mirror = MIRROR_SCENE.instantiate() as Mirror
+	assert_true(mirror != null, "Mirror scene should instantiate as Mirror")
+	if mirror != null:
+		assert_eq(mirror.collision_layer, 2, "Mirror should be on collision layer 2 (mirrors)")
+		assert_eq(mirror.collision_mask, 0, "Mirror collision_mask should be 0")
+		var col_shape: CollisionShape2D = mirror.get_node_or_null("CollisionShape2D") as CollisionShape2D
+		assert_true(col_shape != null, "Mirror should have CollisionShape2D")
+		if col_shape != null:
+			assert_true(col_shape.shape is RectangleShape2D, "Mirror shape should be RectangleShape2D")
+			var rect_shape: RectangleShape2D = col_shape.shape as RectangleShape2D
+			assert_vector_approx(rect_shape.size, Vector2(120.0, 16.0), 0.001, "Mirror shape size should be (120, 16)")
+		var visual_body: ColorRect = mirror.get_node_or_null("VisualBody") as ColorRect
+		assert_true(visual_body != null, "Mirror should have VisualBody ColorRect")
+		var normal_ind: Line2D = mirror.get_node_or_null("NormalIndicator") as Line2D
+		assert_true(normal_ind != null, "Mirror should have NormalIndicator Line2D")
+		mirror.free()
+
+func test_mirror_properties_and_normal() -> void:
+	var mirror: Mirror = Mirror.new()
+	assert_eq(mirror.collider_type, BeamTypes.ColliderType.MIRROR, "Mirror collider_type should be MIRROR")
+	assert_vector_approx(mirror.size, Vector2(120.0, 16.0), 0.001, "Mirror default size should be (120, 16)")
+
+	mirror.rotation = 0.0
+	assert_vector_approx(mirror.get_facing_normal(), Vector2.UP, 0.001, "Normal at rot 0 should be Vector2.UP")
+
+	mirror.rotation = PI / 2.0
+	assert_vector_approx(mirror.get_facing_normal(), Vector2.RIGHT, 0.001, "Normal at rot 90deg should be Vector2.RIGHT")
+
+	mirror.rotation = PI
+	assert_vector_approx(mirror.get_facing_normal(), Vector2.DOWN, 0.001, "Normal at rot 180deg should be Vector2.DOWN")
+
+	mirror.rotation = -PI / 2.0
+	assert_vector_approx(mirror.get_facing_normal(), Vector2.LEFT, 0.001, "Normal at rot -90deg should be Vector2.LEFT")
+
+	mirror.rotation = deg_to_rad(45.0)
+	var expected_45 := Vector2.UP.rotated(deg_to_rad(45.0)).normalized()
+	assert_vector_approx(mirror.get_facing_normal(), expected_45, 0.001, "Normal at rot 45deg mismatch")
+
+	mirror.free()
+
+func test_mirror_90_degree_reflection() -> void:
+	# Ray travelling RIGHT hits a -45° mirror (reflecting UP)
+	var mirror_normal_neg := Vector2.UP.rotated(deg_to_rad(-45.0)).normalized()
+	var fake_cast_up := func(origin: Vector2, _dir: Vector2, _exclude: Array[RID]) -> BeamTypes.RayHit:
+		if origin == Vector2.ZERO:
+			var hit := BeamTypes.RayHit.new()
+			hit.point = Vector2(100, 0)
+			hit.normal = mirror_normal_neg
+			hit.collider_type = BeamTypes.ColliderType.MIRROR
+			return hit
+		return null
+
+	var segments_up: Array[BeamTypes.Segment] = BeamTracer.trace(fake_cast_up, Vector2.ZERO, Vector2.RIGHT)
+	assert_eq(segments_up.size(), 2, "90-degree reflection should produce 2 segments")
+	if segments_up.size() >= 2:
+		assert_vector_approx(segments_up[0].a, Vector2.ZERO, 0.001, "Incoming segment start should be origin")
+		assert_vector_approx(segments_up[0].b, Vector2(100, 0), 0.001, "Incoming segment end should be mirror hit point")
+		assert_vector_approx(segments_up[1].a, Vector2(100, 0), 1.0, "Outgoing segment start should be near hit point")
+		var out_dir: Vector2 = (segments_up[1].b - segments_up[1].a).normalized()
+		assert_vector_approx(out_dir, Vector2.UP, 0.001, "Reflected direction off -45deg mirror should be UP (0, -1)")
+
+	# Ray travelling RIGHT hits a +45° mirror (reflecting DOWN)
+	var mirror_normal_pos := Vector2.UP.rotated(deg_to_rad(45.0)).normalized()
+	var fake_cast_down := func(origin: Vector2, _dir: Vector2, _exclude: Array[RID]) -> BeamTypes.RayHit:
+		if origin == Vector2.ZERO:
+			var hit := BeamTypes.RayHit.new()
+			hit.point = Vector2(100, 0)
+			hit.normal = mirror_normal_pos
+			hit.collider_type = BeamTypes.ColliderType.MIRROR
+			return hit
+		return null
+
+	var segments_down: Array[BeamTypes.Segment] = BeamTracer.trace(fake_cast_down, Vector2.ZERO, Vector2.RIGHT)
+	assert_eq(segments_down.size(), 2, "90-degree reflection should produce 2 segments")
+	if segments_down.size() >= 2:
+		var out_dir_down: Vector2 = (segments_down[1].b - segments_down[1].a).normalized()
+		assert_vector_approx(out_dir_down, Vector2.DOWN, 0.001, "Reflected direction off +45deg mirror should be DOWN (0, 1)")
+
+func test_mirror_two_sided_reflection() -> void:
+	# Facing normal is UP (0, -1)
+	var normal := Vector2.UP
+	var fake_cast_two_sided := func(origin: Vector2, _dir: Vector2, _exclude: Array[RID]) -> BeamTypes.RayHit:
+		if origin == Vector2(0, -100) or origin == Vector2(0, 100):
+			var hit := BeamTypes.RayHit.new()
+			hit.point = Vector2(100, 0)
+			hit.normal = normal
+			hit.collider_type = BeamTypes.ColliderType.MIRROR
+			return hit
+		return null
+
+	# Ray A strikes "front" face from top-left (dir = (1, 1).normalized())
+	var dir_front := Vector2(1, 1).normalized()
+	var segs_front: Array[BeamTypes.Segment] = BeamTracer.trace(fake_cast_two_sided, Vector2(0, -100), dir_front)
+	assert_eq(segs_front.size(), 2, "Front face hit should produce 2 segments")
+	if segs_front.size() >= 2:
+		var out_front: Vector2 = (segs_front[1].b - segs_front[1].a).normalized()
+		var expected_out_front := Vector2(1, -1).normalized()
+		assert_vector_approx(out_front, expected_out_front, 0.001, "Front face reflection angle mismatch")
+
+	# Ray B strikes "back" face from bottom-left (dir = (1, -1).normalized())
+	var dir_back := Vector2(1, -1).normalized()
+	var segs_back: Array[BeamTypes.Segment] = BeamTracer.trace(fake_cast_two_sided, Vector2(0, 100), dir_back)
+	assert_eq(segs_back.size(), 2, "Back face hit should produce 2 segments")
+	if segs_back.size() >= 2:
+		var out_back: Vector2 = (segs_back[1].b - segs_back[1].a).normalized()
+		var expected_out_back := Vector2(1, 1).normalized()
+		assert_vector_approx(out_back, expected_out_back, 0.001, "Back face reflection angle mismatch")
+
+func test_mirror_double_bounce_z_path() -> void:
+	# Origin (0, 100) -> Mirror 1 at (200, 100) rotated 45° (reflects DOWN)
+	# Mirror 2 at (200, 300) rotated 45° (parallel mirror, reflects DOWN to RIGHT) -> Open space
+	var m1_normal := Vector2.UP.rotated(deg_to_rad(45.0)).normalized()
+	var m2_normal := Vector2.UP.rotated(deg_to_rad(45.0)).normalized()
+
+	var fake_cast := func(origin: Vector2, _dir: Vector2, _exclude: Array[RID]) -> BeamTypes.RayHit:
+		if (origin - Vector2(0, 100)).length() < 1.0:
+			var hit := BeamTypes.RayHit.new()
+			hit.point = Vector2(200, 100)
+			hit.normal = m1_normal
+			hit.collider_type = BeamTypes.ColliderType.MIRROR
+			return hit
+		elif (origin - Vector2(200, 100)).length() < 2.0:
+			var hit := BeamTypes.RayHit.new()
+			hit.point = Vector2(200, 300)
+			hit.normal = m2_normal
+			hit.collider_type = BeamTypes.ColliderType.MIRROR
+			return hit
+		return null
+
+	var segments: Array[BeamTypes.Segment] = BeamTracer.trace(fake_cast, Vector2(0, 100), Vector2.RIGHT)
+	assert_eq(segments.size(), 3, "Z-path across two mirrors should produce exactly 3 segments")
+	if segments.size() >= 3:
+		# Segment 0: horizontal to Mirror 1
+		assert_vector_approx(segments[0].a, Vector2(0, 100), 0.001, "Seg 0 start mismatch")
+		assert_vector_approx(segments[0].b, Vector2(200, 100), 0.001, "Seg 0 end mismatch")
+		var dir0: Vector2 = (segments[0].b - segments[0].a).normalized()
+		assert_vector_approx(dir0, Vector2.RIGHT, 0.001, "Seg 0 direction should be RIGHT")
+
+		# Segment 1: vertical down to Mirror 2
+		assert_vector_approx(segments[1].a, Vector2(200, 100), 1.0, "Seg 1 start mismatch")
+		assert_vector_approx(segments[1].b, Vector2(200, 300), 0.001, "Seg 1 end mismatch")
+		var dir1: Vector2 = (segments[1].b - segments[1].a).normalized()
+		assert_vector_approx(dir1, Vector2.DOWN, 0.001, "Seg 1 direction should be DOWN")
+
+		# Segment 2: horizontal to open space
+		assert_vector_approx(segments[2].a, Vector2(200, 300), 1.0, "Seg 2 start mismatch")
+		var dir2: Vector2 = (segments[2].b - segments[2].a).normalized()
+		assert_vector_approx(dir2, Vector2.RIGHT, 0.001, "Seg 2 direction should be RIGHT")
 
 # --- M0 Regression Tests ---
 
