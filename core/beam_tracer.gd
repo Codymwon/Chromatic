@@ -1,5 +1,11 @@
 class_name BeamTracer
 
+const PRISM_FAN_COLORS: Array[BeamTypes.RayColor] = [
+	BeamTypes.RayColor.RED,
+	BeamTypes.RayColor.GREEN,
+	BeamTypes.RayColor.BLUE,
+]
+
 static func trace(
 	cast_fn: Callable,
 	origin: Vector2,
@@ -77,6 +83,8 @@ static func _trace_recursive(
 			segments
 		)
 	elif hit.collider_type == BeamTypes.ColliderType.PRISM:
+		# Exclusion RID: explicitly ignore hit body to prevent outgoing rays from
+		# immediately colliding with their emitter body (CONTEXT.md).
 		var next_exclude: Array[RID] = []
 		if hit.rid.is_valid():
 			next_exclude.append(hit.rid)
@@ -85,22 +93,14 @@ static func _trace_recursive(
 			var prism_rotation: float = 0.0
 			if hit.collider != null and "rotation" in hit.collider:
 				prism_rotation = hit.collider.rotation
+			elif not hit.normal.is_zero_approx():
+				prism_rotation = hit.normal.angle()
 
 			var half_angle_rad: float = deg_to_rad(GameConstants.PRISM_HALF_ANGLE_DEG)
-			var fan_colors: Array[BeamTypes.RayColor] = [
-				BeamTypes.RayColor.RED,
-				BeamTypes.RayColor.GREEN,
-				BeamTypes.RayColor.BLUE,
-			]
-			var fan_offsets: Array[float] = [
-				-half_angle_rad,
-				0.0,
-				half_angle_rad,
-			]
-
 			for i in range(3):
-				var fan_color: BeamTypes.RayColor = fan_colors[i]
-				var fan_dir: Vector2 = Vector2.from_angle(prism_rotation + fan_offsets[i]).normalized()
+				var fan_color: BeamTypes.RayColor = PRISM_FAN_COLORS[i]
+				var offset_rad: float = float(i - 1) * half_angle_rad
+				var fan_dir: Vector2 = Vector2.from_angle(prism_rotation + offset_rad).normalized()
 				var fan_origin: Vector2 = hit.point + fan_dir * GameConstants.RAY_STEP_NUDGE
 
 				_trace_recursive(
