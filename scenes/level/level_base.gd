@@ -126,14 +126,22 @@ func _on_hud_pause_pressed() -> void:
 	var pause_menu: Node = get_node_or_null("PauseMenu")
 	if pause_menu != null and pause_menu.has_method("show_menu"):
 		pause_menu.show_menu()
+	_release_drag()  # Drop any active drag so the piece doesn't lurch on resume
+	if is_inside_tree() and get_tree() != null:
+		get_tree().paused = true
 
 func _on_pause_menu_resume() -> void:
-	pass  # PauseMenu hides itself; drag stays idle until next touch
+	if is_inside_tree() and get_tree() != null:
+		get_tree().paused = false
 
 func _on_pause_menu_restart() -> void:
+	if is_inside_tree() and get_tree() != null:
+		get_tree().paused = false
 	reset_level()
 
 func _on_pause_menu_level_select() -> void:
+	if is_inside_tree() and get_tree() != null:
+		get_tree().paused = false
 	level_select_requested.emit()
 	if is_inside_tree() and get_tree() != null:
 		get_tree().change_scene_to_file("res://scenes/main.tscn")

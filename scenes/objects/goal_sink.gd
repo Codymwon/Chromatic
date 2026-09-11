@@ -48,11 +48,9 @@ func flash_mismatch() -> void:
 	if inner_core is CanvasItem:
 		(inner_core as CanvasItem).modulate = Color(1.0, 0.0, 0.0, 1.0)
 		(inner_core as CanvasItem).visible = true
-	if not is_inside_tree():
-		return
-	var sound_manager: Node = get_node_or_null("/root/SoundManager")
-	if sound_manager and sound_manager.has_method("play_mismatch"):
-		sound_manager.play_mismatch()
+	var sm: Node = _get_sound_manager()
+	if sm and sm.has_method("play_mismatch"):
+		sm.play_mismatch()
 
 func notify_beam_hit(color: BeamTypes.RayColor) -> void:
 	if color == required_color:
@@ -62,17 +60,25 @@ func notify_beam_hit(color: BeamTypes.RayColor) -> void:
 		trigger_mismatch_feedback()
 
 func _on_lit_activated() -> void:
-	if not is_inside_tree():
-		return
-	var sound_manager: Node = get_node_or_null("/root/SoundManager")
-	if sound_manager and sound_manager.has_method("play_sink_lit"):
-		sound_manager.play_sink_lit(required_color)
+	var sm: Node = _get_sound_manager()
+	if sm and sm.has_method("play_sink_lit"):
+		sm.play_sink_lit(required_color)
 
-	var game_state: Node = get_node_or_null("/root/GameState")
+	var game_state: Node = _get_game_state()
 	if game_state and game_state.has_method("trigger_haptic_micro_tap"):
 		game_state.trigger_haptic_micro_tap()
 	elif OS.has_feature("mobile") and Input.has_method("vibrate_handheld"):
 		Input.vibrate_handheld(20)
+
+func _get_sound_manager() -> Node:
+	if not is_inside_tree():
+		return null
+	return get_node_or_null("/root/SoundManager")
+
+func _get_game_state() -> Node:
+	if not is_inside_tree():
+		return null
+	return get_node_or_null("/root/GameState")
 
 func _process(delta: float) -> void:
 	if _mismatch_flash_timer > 0.0:
