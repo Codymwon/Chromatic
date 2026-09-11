@@ -13,6 +13,12 @@ const Prism = preload("res://scenes/objects/prism.gd")
 const GoalSink = preload("res://scenes/objects/goal_sink.gd")
 const Wall = preload("res://scenes/objects/wall.gd")
 
+const LIGHT_SOURCE_SCENE: PackedScene = preload("res://scenes/objects/light_source.tscn")
+const MIRROR_SCENE: PackedScene = preload("res://scenes/objects/mirror.tscn")
+const PRISM_SCENE: PackedScene = preload("res://scenes/objects/prism.tscn")
+const GOAL_SINK_SCENE: PackedScene = preload("res://scenes/objects/goal_sink.tscn")
+const WALL_SCENE: PackedScene = preload("res://scenes/objects/wall.tscn")
+
 enum DragMode { NONE, MOVE, ROTATE }
 
 const PLAYFIELD_MIN: Vector2 = Vector2(64.0, 64.0)
@@ -34,6 +40,7 @@ var active_touch_index: int = -1
 var drag_offset: Vector2 = Vector2.ZERO
 var initial_rotation_offset: float = 0.0
 var snap_enabled: bool = true
+var current_level_dict: Dictionary = {}
 
 func get_objects_container() -> Node2D:
 	if objects_container == null:
@@ -63,6 +70,99 @@ func _connect_hud_signals() -> void:
 
 func _on_hud_snap_toggled(enabled: bool) -> void:
 	snap_enabled = enabled
+
+static func _parse_color_string(color_str: String) -> BeamTypes.RayColor:
+	match color_str.to_lower():
+		"red": return BeamTypes.RayColor.RED
+		"green": return BeamTypes.RayColor.GREEN
+		"blue": return BeamTypes.RayColor.BLUE
+		"white": return BeamTypes.RayColor.WHITE
+		_: return BeamTypes.RayColor.WHITE
+
+func load_level(level_dict: Dictionary) -> void:
+	current_level_dict = level_dict
+	_release_drag()
+	is_completed = false
+	win_hold_elapsed = 0.0
+
+	var container: Node2D = get_objects_container()
+	if container != null:
+		for child in container.get_children():
+			container.remove_child(child)
+			child.queue_free()
+
+	for child in get_children():
+		if child is LightSource:
+			remove_child(child)
+			child.queue_free()
+
+	# Spawn LightSource
+	var source_data: Dictionary = level_dict.get("source", {})
+	if not source_data.is_empty():
+		var light_source: LightSource = LIGHT_SOURCE_SCENE.instantiate() as LightSource
+		light_source.position = Vector2(source_data.get("x", 200.0), source_data.get("y", 540.0))
+		light_source.rotation = deg_to_rad(source_data.get("rot_deg", 0.0))
+		if source_data.has("color"):
+			light_source.beam_color = _parse_color_string(str(source_data.get("color")))
+		if container != null:
+			container.add_child(light_source)
+		else:
+			add_child(light_source)
+
+	# Spawn Objects
+	var objects_data: Array = level_dict.get("objects", [])
+	for obj_entry in objects_data:
+		var obj_dict: Dictionary = obj_entry as Dictionary
+		var obj_type: String = str(obj_dict.get("type", "")).to_lower()
+		var node: Node2D = null
+
+		match obj_type:
+			"mirror":
+				var mirror: Mirror = MIRROR_SCENE.instantiate() as Mirror
+				mirror.position = Vector2(obj_dict.get("x", 0.0), obj_dict.get("y", 0.0))
+				mirror.rotation = deg_to_rad(obj_dict.get("rot_deg", 0.0))
+				mirror.is_draggable = obj_dict.get("draggable", true)
+				mirror.is_rotatable = obj_dict.get("rotatable", true)
+				node = mirror
+			"prism":
+				var prism: Prism = PRISM_SCENE.instantiate() as Prism
+				prism.position = Vector2(obj_dict.get("x", 0.0), obj_dict.get("y", 0.0))
+				prism.rotation = deg_to_rad(obj_dict.get("rot_deg", 0.0))
+				prism.is_draggable = obj_dict.get("draggable", true)
+				prism.is_rotatable = obj_dict.get("rotatable", true)
+				node = prism
+			"sink":
+				var sink: GoalSink = GOAL_SINK_SCENE.instantiate() as GoalSink
+				sink.position = Vector2(obj_dict.get("x", 0.0), obj_dict.get("y", 0.0))
+				sink.rotation = deg_to_rad(obj_dict.get("rot_deg", 0.0))
+				sink.required_color = _parse_color_string(str(obj_dict.get("color", "red")))
+				node = sink
+			"wall":
+				var wall: Wall = WALL_SCENE.instantiate() as Wall
+				wall.position = Vector2(obj_dict.get("x", 0.0), obj_dict.get("y", 0.0))
+				wall.rotation = deg_to_rad(obj_dict.get("rot_deg", 0.0))
+				var w: float = float(obj_dict.get("width", 40.0))
+				var h: float = float(obj_dict.get("height", 300.0))
+				wall.set_wall_size(w, h)
+				node = wall
+			_:
+				assert(false, "Unknown optical piece type in levels.json: " + str(obj_type))
+
+		if node != null:
+			if container != null:
+				container.add_child(node)
+			else:
+				add_child(node)
+
+	_connect_object_signals()
+
+	var title: String = level_dict.get("title", "")
+	if hud != null and hud.has_method("set_title"):
+		hud.set_title(title)
+
+	mark_dirty()
+	update_beams()
+	is_dirty = false
 
 func reset_level() -> void:
 	_release_drag()
@@ -163,15 +263,24 @@ func _handle_screen_touch(event: InputEventScreenTouch) -> void:
 		if piece == null:
 			return
 
-		active_drag_object = piece
-		active_touch_index = event.index
-		win_hold_elapsed = 0.0
-
 		var dist: float = piece.global_position.distance_to(event.position)
+		var can_drag: bool = piece.get("is_draggable") if "is_draggable" in piece else true
+		var can_rotate: bool = piece.get("is_rotatable") if "is_rotatable" in piece else true
+
 		if dist <= INNER_MOVE_ZONE_RADIUS:
+			if not can_drag:
+				return
+			active_drag_object = piece
+			active_touch_index = event.index
+			win_hold_elapsed = 0.0
 			drag_mode = DragMode.MOVE
 			drag_offset = event.position - piece.global_position
 		else:
+			if not can_rotate:
+				return
+			active_drag_object = piece
+			active_touch_index = event.index
+			win_hold_elapsed = 0.0
 			drag_mode = DragMode.ROTATE
 			var touch_angle: float = (event.position - piece.global_position).angle()
 			initial_rotation_offset = piece.global_rotation - touch_angle
