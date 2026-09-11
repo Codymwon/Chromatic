@@ -11,6 +11,8 @@ const Mirror = preload("res://scenes/objects/mirror.gd")
 const MIRROR_SCENE: PackedScene = preload("res://scenes/objects/mirror.tscn")
 const M1TestLevel = preload("res://scenes/level/m1_test_level.gd")
 const M1_LEVEL_SCENE: PackedScene = preload("res://scenes/level/m1_test_level.tscn")
+const M2TestLevel = preload("res://scenes/level/m2_test_level.gd")
+const M2_LEVEL_SCENE: PackedScene = preload("res://scenes/level/m2_test_level.tscn")
 
 var _passed_count: int = 0
 var _failed_count: int = 0
@@ -688,6 +690,107 @@ func test_parallel_mirrors_infinite_loop_safety() -> void:
 
 	var segments: Array[BeamTypes.Segment] = BeamTracer.trace(fake_cast, Vector2.ZERO, Vector2.RIGHT)
 	assert_eq(segments.size(), GameConstants.MAX_BOUNCES, "Parallel mirrors must safely terminate at exactly MAX_BOUNCES (24)")
+
+# --- Integration Tests for Multi-Mirror Test Level (M2 Issue 04) ---
+
+func test_m2_test_level_scene_structure() -> void:
+	var instance: Node = M2_LEVEL_SCENE.instantiate()
+	assert_true(instance != null, "M2 test level should instantiate")
+	if instance == null:
+		return
+
+	var renderer_node: Node = instance.get_node_or_null("BeamRenderer")
+	assert_true(renderer_node is BeamRenderer, "Level should contain BeamRenderer")
+
+	var light_source_node: Node = instance.get_node_or_null("LightSource")
+	assert_true(light_source_node is LightSource, "Level should contain LightSource")
+	if light_source_node is LightSource:
+		assert_vector_approx((light_source_node as LightSource).position, Vector2(200, 300), 0.001, "LightSource position mismatch")
+
+	var mirror1_node: Node = instance.get_node_or_null("Mirror1")
+	assert_true(mirror1_node is Mirror, "Level should contain Mirror1")
+	if mirror1_node is Mirror:
+		assert_eq((mirror1_node as Mirror).collision_layer, 2, "Mirror1 collision layer should be 2")
+		assert_vector_approx((mirror1_node as Mirror).position, Vector2(600, 300), 0.001, "Mirror1 position mismatch")
+
+	var mirror2_node: Node = instance.get_node_or_null("Mirror2")
+	assert_true(mirror2_node is Mirror, "Level should contain Mirror2")
+	if mirror2_node is Mirror:
+		assert_eq((mirror2_node as Mirror).collision_layer, 2, "Mirror2 collision layer should be 2")
+		assert_vector_approx((mirror2_node as Mirror).position, Vector2(600, 700), 0.001, "Mirror2 position mismatch")
+
+	var wall_node: Node = instance.get_node_or_null("Wall")
+	assert_true(wall_node is Wall, "Level should contain Wall")
+	if wall_node is Wall:
+		assert_eq((wall_node as Wall).collision_layer, 1, "Wall collision layer should be 1")
+		assert_vector_approx((wall_node as Wall).position, Vector2(1200, 700), 0.001, "Wall position mismatch")
+
+	instance.free()
+
+func test_m2_test_level_dirty_flag() -> void:
+	var level: M2TestLevel = M2_LEVEL_SCENE.instantiate() as M2TestLevel
+	assert_eq(level.is_dirty, true, "Level should start in dirty state")
+	level._process(0.016)
+	assert_eq(level.is_dirty, false, "Level should clear dirty flag after process frame")
+	level.mark_dirty()
+	assert_eq(level.is_dirty, true, "mark_dirty() should set is_dirty to true")
+	level.free()
+
+func test_m2_test_level_physics_reflection() -> void:
+	var level: M2TestLevel = M2_LEVEL_SCENE.instantiate() as M2TestLevel
+	var space: PhysicsDirectSpaceState2D = root.world_2d.direct_space_state
+
+	# Create Mirror 1 in physics space
+	var mirror1: Mirror = Mirror.new()
+	mirror1.rotation = deg_to_rad(45.0)
+	var m1_body_rid: RID = PhysicsServer2D.body_create()
+	PhysicsServer2D.body_set_space(m1_body_rid, root.world_2d.space)
+	PhysicsServer2D.body_attach_object_instance_id(m1_body_rid, mirror1.get_instance_id())
+	var m1_shape_rid: RID = PhysicsServer2D.rectangle_shape_create()
+	PhysicsServer2D.shape_set_data(m1_shape_rid, Vector2(60.0, 8.0))
+	PhysicsServer2D.body_add_shape(m1_body_rid, m1_shape_rid, Transform2D(deg_to_rad(45.0), Vector2(600.0, 300.0)))
+	PhysicsServer2D.body_set_collision_layer(m1_body_rid, 2)
+
+	# Create Wall in physics space to catch reflected ray
+	var wall: Wall = Wall.new()
+	var wall_body_rid: RID = PhysicsServer2D.body_create()
+	PhysicsServer2D.body_set_space(wall_body_rid, root.world_2d.space)
+	PhysicsServer2D.body_attach_object_instance_id(wall_body_rid, wall.get_instance_id())
+	var wall_shape_rid: RID = PhysicsServer2D.rectangle_shape_create()
+	PhysicsServer2D.shape_set_data(wall_shape_rid, Vector2(20.0, 20.0))
+	PhysicsServer2D.body_add_shape(wall_body_rid, wall_shape_rid, Transform2D(0.0, Vector2(600.0, 700.0)))
+	PhysicsServer2D.body_set_collision_layer(wall_body_rid, 1)
+
+	var segments: Array[BeamTypes.Segment] = level.update_beam(space)
+	assert_eq(segments.size(), 2, "Physics reflection should produce 2 segments (incident + reflected to wall)")
+	if segments.size() >= 2:
+		assert_vector_approx(segments[0].a, Vector2(224.0, 300.0), 0.001, "Segment 0 start should be aperture origin")
+		assert_vector_approx(segments[0].b, Vector2(600.0, 300.0), 15.0, "Segment 0 end should hit mirror near (600, 300)")
+		var out_dir: Vector2 = (segments[1].b - segments[1].a).normalized()
+		assert_vector_approx(out_dir, Vector2.DOWN, 0.001, "Segment 1 direction should be vertically DOWN")
+		assert_vector_approx(segments[1].b, Vector2(600.0, 700.0), 25.0, "Segment 1 end should terminate at wall near y=700")
+
+	PhysicsServer2D.free_rid(m1_shape_rid)
+	PhysicsServer2D.free_rid(m1_body_rid)
+	PhysicsServer2D.free_rid(wall_shape_rid)
+	PhysicsServer2D.free_rid(wall_body_rid)
+	mirror1.free()
+	wall.free()
+	level.free()
+
+func test_m2_test_level_zero_allocations() -> void:
+	var level: M2TestLevel = M2_LEVEL_SCENE.instantiate() as M2TestLevel
+	var space: PhysicsDirectSpaceState2D = root.world_2d.direct_space_state
+	var renderer: BeamRenderer = level.get_node("BeamRenderer") as BeamRenderer
+	renderer._init_pool()
+	var initial_child_count: int = renderer.get_child_count()
+	assert_eq(initial_child_count, 64, "Initial pooled child count should be 64")
+
+	for i in range(10):
+		level.update_beam(space)
+
+	assert_eq(renderer.get_child_count(), initial_child_count, "BeamRenderer child count must remain constant (zero runtime allocations)")
+	level.free()
 
 # --- M0 Regression Tests ---
 
