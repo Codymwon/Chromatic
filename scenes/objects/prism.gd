@@ -19,13 +19,21 @@ func _notification(what: int) -> void:
 	if what == NOTIFICATION_TRANSFORM_CHANGED:
 		transformed.emit()
 
+var _initial_transform_stored: bool = false
+
 func _ready() -> void:
 	collision_layer = 4 # Layer 3: prisms
 	collision_mask = 0
+	store_initial_transform()
+
+func store_initial_transform() -> void:
 	initial_position = position if not is_inside_tree() else global_position
 	initial_rotation = rotation if not is_inside_tree() else global_rotation
+	_initial_transform_stored = true
 
 func reset_transform() -> void:
+	if not _initial_transform_stored:
+		store_initial_transform()
 	if is_inside_tree():
 		global_position = initial_position
 		global_rotation = initial_rotation
