@@ -24,6 +24,7 @@ const LEVEL_BASE_SCENE: PackedScene = preload("res://scenes/level/level_base.tsc
 const M4TestLevel = preload("res://scenes/level/m4_test_level.gd")
 const M4_LEVEL_SCENE: PackedScene = preload("res://scenes/level/m4_test_level.tscn")
 const TestTouchInteraction = preload("res://tests/test_touch_interaction.gd")
+const TestLevelSystem = preload("res://tests/test_level_system.gd")
 
 class MockPrism extends RefCounted:
 	var rotation: float = 0.0
@@ -1979,6 +1980,29 @@ func test_touch_interaction_hover() -> void:
 
 func test_touch_interaction_hud_consumption() -> void:
 	TestTouchInteraction.test_hud_input_consumption_and_accessibility(self)
+
+# --- Integration Tests for Level System, Schema & Persistence (Milestone 6) ---
+
+func test_level_system_schema_and_integrity() -> void:
+	TestLevelSystem.test_levels_json_validity_and_schema(self)
+
+func test_level_system_unknown_piece_assertion() -> void:
+	TestLevelSystem.test_unknown_piece_type_assertion(self)
+
+func test_level_system_save_persistence() -> void:
+	TestLevelSystem.test_save_game_persistence(self)
+
+func test_level_system_dynamic_loading() -> void:
+	TestLevelSystem.test_dynamic_level_loading(self)
+
+func test_level_system_progression_advancement() -> void:
+	TestLevelSystem.test_progression_advancement_logic(self)
+
+func test_level_system_win_overlay_flow() -> void:
+	TestLevelSystem.test_win_overlay_flow(self)
+
+func test_level_system_level_8_solvability() -> void:
+	TestLevelSystem.test_level_8_mathematical_solvability(self)
 
 
 

@@ -23,6 +23,9 @@ func _ready() -> void:
 	if reset_button != null and not reset_button.pressed.is_connected(_on_reset_button_pressed):
 		reset_button.pressed.connect(_on_reset_button_pressed)
 
+func set_title(p_title: String) -> void:
+	level_title = p_title
+
 func _update_title_label() -> void:
 	if title_label != null:
 		title_label.text = level_title
