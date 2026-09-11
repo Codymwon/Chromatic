@@ -43,6 +43,20 @@ func set_haptics_enabled(p_enabled: bool) -> void:
 		haptics_toggled.emit(haptics_enabled)
 		save_settings()
 
+func trigger_haptic_micro_tap() -> void:
+	trigger_haptic_vibration(20)
+
+func trigger_haptic_victory() -> void:
+	trigger_haptic_vibration(80)
+
+func trigger_haptic_vibration(duration_ms: int) -> void:
+	if not haptics_enabled:
+		return
+	if not (OS.has_feature("mobile") or OS.get_name() == "Android"):
+		return
+	if Input.has_method("vibrate_handheld"):
+		Input.vibrate_handheld(duration_ms)
+
 func load_settings(path: String = "") -> void:
 	if path != "":
 		save_path = path

@@ -69,11 +69,9 @@ func _on_lit_activated() -> void:
 		sound_manager.play_sink_lit(required_color)
 
 	var game_state: Node = get_node_or_null("/root/GameState")
-	var haptics_enabled: bool = true
-	if game_state and "haptics_enabled" in game_state:
-		haptics_enabled = bool(game_state.haptics_enabled)
-
-	if haptics_enabled and OS.has_feature("mobile") and Input.has_method("vibrate_handheld"):
+	if game_state and game_state.has_method("trigger_haptic_micro_tap"):
+		game_state.trigger_haptic_micro_tap()
+	elif OS.has_feature("mobile") and Input.has_method("vibrate_handheld"):
 		Input.vibrate_handheld(20)
 
 func _process(delta: float) -> void:
