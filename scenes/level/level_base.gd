@@ -13,12 +13,27 @@ const Prism = preload("res://scenes/objects/prism.gd")
 const GoalSink = preload("res://scenes/objects/goal_sink.gd")
 const Wall = preload("res://scenes/objects/wall.gd")
 
+enum DragMode { NONE, MOVE, ROTATE }
+
+const PLAYFIELD_MIN: Vector2 = Vector2(64.0, 64.0)
+const PLAYFIELD_MAX: Vector2 = Vector2(1856.0, 1016.0)
+const INNER_MOVE_ZONE_RADIUS: float = 32.0
+const MAX_GRAB_RADIUS: float = 48.0
+
 @onready var beam_renderer: BeamRenderer = get_node_or_null("BeamRenderer") as BeamRenderer
 @onready var objects_container: Node2D = get_node_or_null("Objects") as Node2D
+@onready var hud: Node = get_node_or_null("HUD")
 
 var is_dirty: bool = true
 var is_completed: bool = false
 var win_hold_elapsed: float = 0.0
+
+var drag_mode: DragMode = DragMode.NONE
+var active_drag_object: Node2D = null
+var active_touch_index: int = -1
+var drag_offset: Vector2 = Vector2.ZERO
+var initial_rotation_offset: float = 0.0
+var snap_enabled: bool = true
 
 func get_objects_container() -> Node2D:
 	if objects_container == null:
@@ -32,16 +47,175 @@ func get_beam_renderer() -> BeamRenderer:
 
 func _ready() -> void:
 	_connect_object_signals()
+	_connect_hud_signals()
 	mark_dirty()
 
+func _connect_hud_signals() -> void:
+	if hud == null:
+		hud = get_node_or_null("HUD")
+	if hud != null:
+		if hud.has_signal("snap_toggled") and not hud.snap_toggled.is_connected(_on_hud_snap_toggled):
+			hud.snap_toggled.connect(_on_hud_snap_toggled)
+		if hud.has_signal("reset_requested") and not hud.reset_requested.is_connected(reset_level):
+			hud.reset_requested.connect(reset_level)
+		if hud.has_method("set_snap_enabled"):
+			hud.set_snap_enabled(snap_enabled)
+
+func _on_hud_snap_toggled(enabled: bool) -> void:
+	snap_enabled = enabled
+
+func reset_level() -> void:
+	_release_drag()
+	win_hold_elapsed = 0.0
+	is_completed = false
+
+	for child in _get_objects_children():
+		if child.has_method("reset_transform"):
+			child.reset_transform()
+
+	mark_dirty()
+
+func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventScreenTouch:
+		_handle_screen_touch(event as InputEventScreenTouch)
+	elif event is InputEventScreenDrag:
+		_handle_screen_drag(event as InputEventScreenDrag)
+	elif event is InputEventMouseButton:
+		var mb: InputEventMouseButton = event as InputEventMouseButton
+		if mb.button_index == MOUSE_BUTTON_LEFT:
+			var st := InputEventScreenTouch.new()
+			st.position = mb.position
+			st.pressed = mb.pressed
+			st.index = 0
+			_handle_screen_touch(st)
+	elif event is InputEventMouseMotion:
+		var mm: InputEventMouseMotion = event as InputEventMouseMotion
+		if mm.button_mask & MOUSE_BUTTON_MASK_LEFT:
+			var sd := InputEventScreenDrag.new()
+			sd.position = mm.position
+			sd.relative = mm.relative
+			sd.index = 0
+			_handle_screen_drag(sd)
+
+func get_draggable_object_at(pos: Vector2) -> Node2D:
+	if is_inside_tree():
+		var world_2d: World2D = get_world_2d()
+		if world_2d != null and world_2d.direct_space_state != null:
+			var space: PhysicsDirectSpaceState2D = world_2d.direct_space_state
+			var params := PhysicsPointQueryParameters2D.new()
+			params.position = pos
+			params.collision_mask = 16 # Layer 5: touch_targets
+			params.collide_with_areas = true
+			params.collide_with_bodies = true
+			var hits: Array[Dictionary] = space.intersect_point(params, 32)
+			var candidates: Array[Node2D] = []
+			for hit in hits:
+				var collider: Object = hit.get("collider")
+				if collider is Node:
+					var node: Node = collider as Node
+					var piece: Node2D = null
+					if node.has_method("reset_transform") and node is Node2D:
+						piece = node as Node2D
+					elif node.get_parent() != null and node.get_parent().has_method("reset_transform") and node.get_parent() is Node2D:
+						piece = node.get_parent() as Node2D
+					if piece != null and not candidates.has(piece):
+						candidates.append(piece)
+
+			if candidates.size() > 0:
+				# Sort by visual layering: highest z_index first, then highest child index in tree
+				candidates.sort_custom(func(a: Node2D, b: Node2D) -> bool:
+					if a.z_index != b.z_index:
+						return a.z_index > b.z_index
+					return a.get_index() > b.get_index()
+				)
+				return candidates[0]
+			return null
+
+	# Fallback for headless tests running without an active 2D physics world
+	var candidate_pieces: Array[Node2D] = []
+	for child in _get_objects_children():
+		if child.has_method("reset_transform") and child is Node2D:
+			var piece: Node2D = child as Node2D
+			var dist: float = piece.global_position.distance_to(pos)
+			if dist <= MAX_GRAB_RADIUS:
+				candidate_pieces.append(piece)
+
+	if candidate_pieces.size() > 0:
+		candidate_pieces.sort_custom(func(a: Node2D, b: Node2D) -> bool:
+			var dist_a: float = a.global_position.distance_to(pos)
+			var dist_b: float = b.global_position.distance_to(pos)
+			if absf(dist_a - dist_b) < 1.0:
+				if a.z_index != b.z_index:
+					return a.z_index > b.z_index
+				return a.get_index() > b.get_index()
+			return dist_a < dist_b
+		)
+		return candidate_pieces[0]
+
+	return null
+
+func _handle_screen_touch(event: InputEventScreenTouch) -> void:
+	if event.pressed:
+		if drag_mode != DragMode.NONE:
+			return
+
+		var piece: Node2D = get_draggable_object_at(event.position)
+		if piece == null:
+			return
+
+		active_drag_object = piece
+		active_touch_index = event.index
+		win_hold_elapsed = 0.0
+
+		var dist: float = piece.global_position.distance_to(event.position)
+		if dist <= INNER_MOVE_ZONE_RADIUS:
+			drag_mode = DragMode.MOVE
+			drag_offset = event.position - piece.global_position
+		else:
+			drag_mode = DragMode.ROTATE
+			var touch_angle: float = (event.position - piece.global_position).angle()
+			initial_rotation_offset = piece.global_rotation - touch_angle
+			if piece.has_method("set_rotation_ring_visible"):
+				piece.set_rotation_ring_visible(true)
+	else:
+		if event.index == active_touch_index:
+			_release_drag()
+
+func _handle_screen_drag(event: InputEventScreenDrag) -> void:
+	if event.index != active_touch_index or active_drag_object == null:
+		return
+
+	if drag_mode == DragMode.MOVE:
+		var target_pos: Vector2 = event.position - drag_offset
+		target_pos.x = clampf(target_pos.x, PLAYFIELD_MIN.x, PLAYFIELD_MAX.x)
+		target_pos.y = clampf(target_pos.y, PLAYFIELD_MIN.y, PLAYFIELD_MAX.y)
+		active_drag_object.global_position = target_pos
+		win_hold_elapsed = 0.0
+		mark_dirty()
+	elif drag_mode == DragMode.ROTATE:
+		var current_angle: float = (event.position - active_drag_object.global_position).angle()
+		var raw_angle: float = current_angle + initial_rotation_offset
+		if snap_enabled:
+			var snap_rad: float = deg_to_rad(GameConstants.ROTATE_SNAP_DEG)
+			raw_angle = roundf(raw_angle / snap_rad) * snap_rad
+		active_drag_object.global_rotation = raw_angle
+		win_hold_elapsed = 0.0
+		mark_dirty()
+
+func _release_drag() -> void:
+	if active_drag_object != null:
+		if active_drag_object.has_method("set_rotation_ring_visible"):
+			active_drag_object.set_rotation_ring_visible(false)
+	active_drag_object = null
+	drag_mode = DragMode.NONE
+	active_touch_index = -1
+
 func _connect_object_signals() -> void:
-	var container: Node = get_objects_container()
-	if container == null:
-		container = self
-	for child in container.get_children():
-		if child is Mirror or child is Prism:
-			if child.has_signal("transformed") and not child.transformed.is_connected(mark_dirty):
-				child.transformed.connect(mark_dirty)
+	for child in _get_objects_children():
+		if child.has_method("store_initial_transform"):
+			child.store_initial_transform()
+		if child.has_signal("transformed") and not child.transformed.is_connected(mark_dirty):
+			child.transformed.connect(mark_dirty)
 
 func mark_dirty() -> void:
 	is_dirty = true

@@ -56,6 +56,7 @@ pointing/emulate_mouse_from_touch=false
 2d_physics/layer_2="mirrors"
 2d_physics/layer_3="prisms"
 2d_physics/layer_4="sensors"
+2d_physics/layer_5="touch_targets"
 
 [rendering]
 
