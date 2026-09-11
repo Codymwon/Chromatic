@@ -19,6 +19,8 @@ const M2TestLevel = preload("res://scenes/level/m2_test_level.gd")
 const M2_LEVEL_SCENE: PackedScene = preload("res://scenes/level/m2_test_level.tscn")
 const M3TestLevel = preload("res://scenes/level/m3_test_level.gd")
 const M3_LEVEL_SCENE: PackedScene = preload("res://scenes/level/m3_test_level.tscn")
+const LevelBase = preload("res://scenes/level/level_base.gd")
+const LEVEL_BASE_SCENE: PackedScene = preload("res://scenes/level/level_base.tscn")
 
 class MockPrism extends RefCounted:
 	var rotation: float = 0.0
@@ -1437,6 +1439,119 @@ func test_m3_test_level_zero_allocations() -> void:
 
 	assert_eq(renderer.get_child_count(), initial_child_count, "BeamRenderer child count must remain constant (zero runtime allocations)")
 	level.free()
+
+# --- Unit Tests for LevelBase & Win Hysteresis (M4 Issues 02 & 03) ---
+
+func test_level_base_scene_structure() -> void:
+	var level: LevelBase = LEVEL_BASE_SCENE.instantiate() as LevelBase
+	assert_true(level != null, "LevelBase scene should instantiate")
+	if level != null:
+		var renderer: Node = level.get_node_or_null("BeamRenderer")
+		assert_true(renderer is BeamRenderer, "LevelBase should contain BeamRenderer")
+		var objects: Node = level.get_node_or_null("Objects")
+		assert_true(objects is Node2D, "LevelBase should contain Objects Node2D container")
+		assert_eq(level.is_dirty, true, "LevelBase should start dirty")
+		assert_eq(level.is_completed, false, "LevelBase should start uncompleted")
+		assert_float_approx(level.win_hold_elapsed, 0.0, 0.001, "win_hold_elapsed should start at 0.0")
+		level.free()
+
+func test_level_base_dirty_state_and_object_signals() -> void:
+	var level: LevelBase = LEVEL_BASE_SCENE.instantiate() as LevelBase
+	level._ready()
+	assert_eq(level.is_dirty, true, "LevelBase should be dirty on ready")
+	level._process(0.016)
+	assert_eq(level.is_dirty, false, "LevelBase should clear dirty flag after process")
+
+	var mirror: Mirror = Mirror.new()
+	level.get_objects_container().add_child(mirror)
+	level._connect_object_signals()
+
+	mirror.rotation += 0.2
+	mirror._notification(CanvasItem.NOTIFICATION_TRANSFORM_CHANGED)
+	assert_eq(level.is_dirty, true, "Transform change in optical piece should mark LevelBase dirty")
+
+	level.free()
+
+func test_level_base_win_hold_hysteresis() -> void:
+	var level: LevelBase = LEVEL_BASE_SCENE.instantiate() as LevelBase
+	var sink1: GoalSink = GoalSink.new()
+	sink1.required_color = BeamTypes.RayColor.RED
+	var sink2: GoalSink = GoalSink.new()
+	sink2.required_color = BeamTypes.RayColor.GREEN
+	level.get_objects_container().add_child(sink1)
+	level.get_objects_container().add_child(sink2)
+
+	var win_emitted: Array[bool] = [false]
+	level.level_completed.connect(func(): win_emitted[0] = true)
+
+	# Both sinks lit
+	sink1.set_lit(true)
+	sink2.set_lit(true)
+
+	level._evaluate_win_condition(0.2)
+	assert_float_approx(level.win_hold_elapsed, 0.2, 0.001, "Hold time should accumulate to 0.2s")
+	assert_eq(level.is_completed, false, "Level should not complete before WIN_HOLD_TIME (0.5s)")
+	assert_eq(win_emitted[0], false, "level_completed should not emit yet")
+
+	level._evaluate_win_condition(0.25)
+	assert_float_approx(level.win_hold_elapsed, 0.45, 0.001, "Hold time should accumulate to 0.45s")
+	assert_eq(level.is_completed, false, "Level should not complete at 0.45s")
+
+	# Pass the 0.5s threshold
+	level._evaluate_win_condition(0.06)
+	assert_float_approx(level.win_hold_elapsed, 0.51, 0.001, "Hold time should reach 0.51s")
+	assert_eq(level.is_completed, true, "Level should complete after reaching 0.5s hold time")
+	assert_eq(win_emitted[0], true, "level_completed should emit upon hold completion")
+
+	level.free()
+
+func test_level_base_win_hold_interruption_resets_timer() -> void:
+	var level: LevelBase = LEVEL_BASE_SCENE.instantiate() as LevelBase
+	var sink: GoalSink = GoalSink.new()
+	sink.required_color = BeamTypes.RayColor.RED
+	level.get_objects_container().add_child(sink)
+
+	var win_emitted: Array[bool] = [false]
+	level.level_completed.connect(func(): win_emitted[0] = true)
+
+	sink.set_lit(true)
+	level._evaluate_win_condition(0.4) # Almost won (0.4s / 0.5s)
+	assert_float_approx(level.win_hold_elapsed, 0.4, 0.001, "Hold time should reach 0.4s")
+	assert_eq(level.is_completed, false, "Level must not be complete at 0.4s")
+
+	# Jitter interruption: beam momentarily leaves target
+	sink.set_lit(false)
+	level._evaluate_win_condition(0.016)
+	assert_float_approx(level.win_hold_elapsed, 0.0, 0.001, "Interruption must immediately reset win_hold_elapsed to 0.0")
+	assert_eq(level.is_completed, false, "Level must remain uncompleted after interruption")
+	assert_eq(win_emitted[0], false, "level_completed must not emit on interruption")
+
+	# Reconnected: must hold for full 0.5s again
+	sink.set_lit(true)
+	level._evaluate_win_condition(0.3)
+	assert_float_approx(level.win_hold_elapsed, 0.3, 0.001, "Timer must restart from 0 and accumulate to 0.3s")
+	assert_eq(level.is_completed, false, "Level must not complete early on restarted hold")
+
+	level.free()
+
+func test_level_base_no_duplicate_win_emission() -> void:
+	var level: LevelBase = LEVEL_BASE_SCENE.instantiate() as LevelBase
+	var sink: GoalSink = GoalSink.new()
+	level.get_objects_container().add_child(sink)
+
+	var emit_count: Array[int] = [0]
+	level.level_completed.connect(func(): emit_count[0] += 1)
+
+	sink.set_lit(true)
+	level._evaluate_win_condition(0.6)
+	assert_eq(emit_count[0], 1, "level_completed should emit exactly once")
+
+	level._evaluate_win_condition(0.1)
+	level._evaluate_win_condition(0.5)
+	assert_eq(emit_count[0], 1, "Duplicate frames must not re-emit level_completed")
+
+	level.free()
+
 
 
 # --- M0 Regression Tests ---
