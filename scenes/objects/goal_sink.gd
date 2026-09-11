@@ -33,6 +33,9 @@ func set_lit(p_lit: bool) -> void:
 func is_currently_lit() -> bool:
 	return is_lit
 
+func is_flashing_mismatch() -> bool:
+	return _mismatch_flash_timer > 0.0
+
 func flash_mismatch() -> void:
 	_mismatch_flash_timer = 0.2
 	if inner_core is CanvasItem:
@@ -41,6 +44,7 @@ func flash_mismatch() -> void:
 
 func notify_beam_hit(color: BeamTypes.RayColor) -> void:
 	if color == required_color:
+		_mismatch_flash_timer = 0.0
 		set_lit(true)
 	elif not is_lit:
 		flash_mismatch()
