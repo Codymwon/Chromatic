@@ -633,6 +633,62 @@ func test_mirror_double_bounce_z_path() -> void:
 		var dir2: Vector2 = (segments[2].b - segments[2].a).normalized()
 		assert_vector_approx(dir2, Vector2.RIGHT, 0.001, "Seg 2 direction should be RIGHT")
 
+# --- Unit Tests for Glancing Absorption & Loop Safety (M2 Issue 03) ---
+
+func test_glancing_hit_absorbed() -> void:
+	# Near-parallel normal -> |dot(d, n)| < 0.05 -> absorbed
+	var fake_cast := func(_origin: Vector2, _dir: Vector2, _exclude: Array[RID]) -> BeamTypes.RayHit:
+		var hit := BeamTypes.RayHit.new()
+		hit.point = Vector2(100, 0)
+		hit.normal = Vector2(0.01, 0.9999).normalized()
+		hit.collider_type = BeamTypes.ColliderType.MIRROR
+		return hit
+
+	var segments: Array[BeamTypes.Segment] = BeamTracer.trace(fake_cast, Vector2.ZERO, Vector2.RIGHT)
+	assert_eq(segments.size(), 1, "Glancing hit (|d.n| < 0.05) must terminate immediately with 1 segment")
+	if segments.size() > 0:
+		assert_vector_approx(segments[0].a, Vector2.ZERO, 0.001, "Segment start should be origin")
+		assert_vector_approx(segments[0].b, Vector2(100, 0), 0.001, "Segment end should be hit point")
+
+func test_glancing_angle_boundary() -> void:
+	# Test just below threshold (0.04 -> absorbed)
+	var fake_cast_sub := func(_origin: Vector2, _dir: Vector2, _exclude: Array[RID]) -> BeamTypes.RayHit:
+		var hit := BeamTypes.RayHit.new()
+		hit.point = Vector2(100, 0)
+		hit.normal = Vector2(0.04, 0.9992).normalized()
+		hit.collider_type = BeamTypes.ColliderType.MIRROR
+		return hit
+
+	var segs_sub: Array[BeamTypes.Segment] = BeamTracer.trace(fake_cast_sub, Vector2.ZERO, Vector2.RIGHT)
+	assert_eq(segs_sub.size(), 1, "Incidence with dot 0.04 (< 0.05) must be absorbed")
+
+	# Test just above threshold (0.06 -> reflected)
+	var call_idx: Array[int] = [0]
+	var fake_cast_sup := func(_origin: Vector2, _dir: Vector2, _exclude: Array[RID]) -> BeamTypes.RayHit:
+		call_idx[0] += 1
+		if call_idx[0] == 1:
+			var hit := BeamTypes.RayHit.new()
+			hit.point = Vector2(100, 0)
+			hit.normal = Vector2(0.06, 0.9982).normalized()
+			hit.collider_type = BeamTypes.ColliderType.MIRROR
+			return hit
+		return null
+
+	var segs_sup: Array[BeamTypes.Segment] = BeamTracer.trace(fake_cast_sup, Vector2.ZERO, Vector2.RIGHT)
+	assert_eq(segs_sup.size(), 2, "Incidence with dot 0.06 (>= 0.05) must reflect and produce 2 segments")
+
+func test_parallel_mirrors_infinite_loop_safety() -> void:
+	# Two parallel mirrors reflecting back and forth
+	var fake_cast := func(origin: Vector2, dir: Vector2, _exclude: Array[RID]) -> BeamTypes.RayHit:
+		var hit := BeamTypes.RayHit.new()
+		hit.point = origin + dir * 100.0
+		hit.normal = -dir
+		hit.collider_type = BeamTypes.ColliderType.MIRROR
+		return hit
+
+	var segments: Array[BeamTypes.Segment] = BeamTracer.trace(fake_cast, Vector2.ZERO, Vector2.RIGHT)
+	assert_eq(segments.size(), GameConstants.MAX_BOUNCES, "Parallel mirrors must safely terminate at exactly MAX_BOUNCES (24)")
+
 # --- M0 Regression Tests ---
 
 func test_m0_main_scene_load() -> void:
