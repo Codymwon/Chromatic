@@ -577,6 +577,37 @@ func test_mirror_scene_instantiation() -> void:
 		assert_true(visual_body != null, "Mirror should have VisualBody ColorRect")
 		var normal_ind: Line2D = mirror.get_node_or_null("NormalIndicator") as Line2D
 		assert_true(normal_ind != null, "Mirror should have NormalIndicator Line2D")
+
+		var ring: Line2D = mirror.get_node_or_null("RotationRing") as Line2D
+		assert_true(ring != null, "Mirror should have RotationRing Line2D")
+		assert_eq(ring.visible, false, "RotationRing should default to invisible")
+		mirror.set_rotation_ring_visible(true)
+		assert_eq(ring.visible, true, "set_rotation_ring_visible(true) should make ring visible")
+
+		var touch_target: Area2D = mirror.get_node_or_null("TouchTarget") as Area2D
+		assert_true(touch_target != null, "Mirror should have TouchTarget Area2D")
+		if touch_target != null:
+			assert_eq(touch_target.collision_layer, 16, "TouchTarget collision_layer should be 16 (Layer 5: touch_targets)")
+			assert_eq(touch_target.collision_mask, 0, "TouchTarget collision_mask should be 0")
+			var touch_col: CollisionShape2D = touch_target.get_node_or_null("CollisionShape2D") as CollisionShape2D
+			assert_true(touch_col != null, "TouchTarget should have CollisionShape2D")
+			if touch_col != null:
+				assert_true(touch_col.shape is CircleShape2D, "TouchTarget shape should be CircleShape2D")
+				var circle: CircleShape2D = touch_col.shape as CircleShape2D
+				assert_float_approx(circle.radius, 48.0, 0.001, "TouchTarget grab radius should be 48.0px (>= 24px)")
+
+		# Test initial transform storage and reset
+		mirror.position = Vector2(300, 200)
+		mirror.rotation = 1.0
+		mirror._ready()
+		assert_vector_approx(mirror.initial_position, Vector2(300, 200), 0.001, "initial_position should be stored on _ready")
+		assert_float_approx(mirror.initial_rotation, 1.0, 0.001, "initial_rotation should be stored on _ready")
+		mirror.position = Vector2(500, 400)
+		mirror.rotation = 2.5
+		mirror.reset_transform()
+		assert_vector_approx(mirror.position, Vector2(300, 200), 0.001, "reset_transform() should restore initial position")
+		assert_float_approx(mirror.rotation, 1.0, 0.001, "reset_transform() should restore initial rotation")
+
 		mirror.free()
 
 func test_mirror_properties_and_normal() -> void:
@@ -626,6 +657,37 @@ func test_prism_scene_instantiation() -> void:
 		assert_true(refractive_core != null, "Prism should have RefractiveCore Polygon2D")
 		var glass_border: Line2D = prism.get_node_or_null("GlassBorder") as Line2D
 		assert_true(glass_border != null, "Prism should have GlassBorder Line2D")
+
+		var ring: Line2D = prism.get_node_or_null("RotationRing") as Line2D
+		assert_true(ring != null, "Prism should have RotationRing Line2D")
+		assert_eq(ring.visible, false, "RotationRing should default to invisible")
+		prism.set_rotation_ring_visible(true)
+		assert_eq(ring.visible, true, "set_rotation_ring_visible(true) should make ring visible")
+
+		var touch_target: Area2D = prism.get_node_or_null("TouchTarget") as Area2D
+		assert_true(touch_target != null, "Prism should have TouchTarget Area2D")
+		if touch_target != null:
+			assert_eq(touch_target.collision_layer, 16, "TouchTarget collision_layer should be 16 (Layer 5: touch_targets)")
+			assert_eq(touch_target.collision_mask, 0, "TouchTarget collision_mask should be 0")
+			var touch_col: CollisionShape2D = touch_target.get_node_or_null("CollisionShape2D") as CollisionShape2D
+			assert_true(touch_col != null, "TouchTarget should have CollisionShape2D")
+			if touch_col != null:
+				assert_true(touch_col.shape is CircleShape2D, "TouchTarget shape should be CircleShape2D")
+				var circle: CircleShape2D = touch_col.shape as CircleShape2D
+				assert_float_approx(circle.radius, 48.0, 0.001, "TouchTarget grab radius should be 48.0px (>= 24px)")
+
+		# Test initial transform storage and reset
+		prism.position = Vector2(400, 300)
+		prism.rotation = 0.8
+		prism._ready()
+		assert_vector_approx(prism.initial_position, Vector2(400, 300), 0.001, "initial_position should be stored on _ready")
+		assert_float_approx(prism.initial_rotation, 0.8, 0.001, "initial_rotation should be stored on _ready")
+		prism.position = Vector2(600, 500)
+		prism.rotation = 1.9
+		prism.reset_transform()
+		assert_vector_approx(prism.position, Vector2(400, 300), 0.001, "reset_transform() should restore initial position")
+		assert_float_approx(prism.rotation, 0.8, 0.001, "reset_transform() should restore initial rotation")
+
 		prism.free()
 
 func test_prism_properties() -> void:
