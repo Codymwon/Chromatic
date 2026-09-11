@@ -1,0 +1,144 @@
+{
+  "version": 1,
+  "levels": [
+    {
+      "id": "level_01",
+      "title": "1. Chromatic Split",
+      "source": { "x": 200, "y": 540, "rot_deg": 0 },
+      "objects": [
+        { "type": "prism", "x": 600, "y": 440, "rot_deg": 0, "draggable": true, "rotatable": false },
+        { "type": "sink", "color": "red", "x": 1500, "y": 349 },
+        { "type": "sink", "color": "green", "x": 1500, "y": 540 },
+        { "type": "sink", "color": "blue", "x": 1500, "y": 731 },
+        { "type": "wall", "x": 960, "y": 20, "width": 1920, "height": 40 },
+        { "type": "wall", "x": 960, "y": 1060, "width": 1920, "height": 40 },
+        { "type": "wall", "x": 20, "y": 540, "width": 40, "height": 1080 },
+        { "type": "wall", "x": 1900, "y": 540, "width": 40, "height": 1080 }
+      ]
+    },
+    {
+      "id": "level_02",
+      "title": "2. First Reflection",
+      "source": { "x": 200, "y": 300, "rot_deg": 0 },
+      "objects": [
+        { "type": "mirror", "x": 960, "y": 300, "rot_deg": 0, "draggable": false, "rotatable": true },
+        { "type": "prism", "x": 960, "y": 650, "rot_deg": 0, "draggable": false, "rotatable": false },
+        { "type": "sink", "color": "red", "x": 1600, "y": 514 },
+        { "type": "sink", "color": "green", "x": 1600, "y": 650 },
+        { "type": "sink", "color": "blue", "x": 1600, "y": 786 },
+        { "type": "wall", "x": 960, "y": 20, "width": 1920, "height": 40 },
+        { "type": "wall", "x": 960, "y": 1060, "width": 1920, "height": 40 },
+        { "type": "wall", "x": 20, "y": 540, "width": 40, "height": 1080 },
+        { "type": "wall", "x": 1900, "y": 540, "width": 40, "height": 1080 }
+      ]
+    },
+    {
+      "id": "level_03",
+      "title": "3. Angle of Attack",
+      "source": { "x": 200, "y": 250, "rot_deg": 0 },
+      "objects": [
+        { "type": "mirror", "x": 600, "y": 500, "rot_deg": 0, "draggable": true, "rotatable": true },
+        { "type": "prism", "x": 1000, "y": 700, "rot_deg": 0, "draggable": false, "rotatable": false },
+        { "type": "sink", "color": "red", "x": 1600, "y": 572 },
+        { "type": "sink", "color": "green", "x": 1600, "y": 700 },
+        { "type": "sink", "color": "blue", "x": 1600, "y": 828 },
+        { "type": "wall", "x": 650, "y": 700, "width": 40, "height": 300 },
+        { "type": "wall", "x": 960, "y": 20, "width": 1920, "height": 40 },
+        { "type": "wall", "x": 960, "y": 1060, "width": 1920, "height": 40 },
+        { "type": "wall", "x": 20, "y": 540, "width": 40, "height": 1080 },
+        { "type": "wall", "x": 1900, "y": 540, "width": 40, "height": 1080 }
+      ]
+    },
+    {
+      "id": "level_04",
+      "title": "4. The Detour",
+      "source": { "x": 200, "y": 540, "rot_deg": 0 },
+      "objects": [
+        { "type": "wall", "x": 800, "y": 540, "width": 60, "height": 450 },
+        { "type": "mirror", "x": 400, "y": 700, "rot_deg": 0, "draggable": true, "rotatable": true },
+        { "type": "mirror", "x": 800, "y": 850, "rot_deg": 0, "draggable": true, "rotatable": true },
+        { "type": "prism", "x": 1200, "y": 200, "rot_deg": 0, "draggable": false, "rotatable": false },
+        { "type": "sink", "color": "red", "x": 1650, "y": 104 },
+        { "type": "sink", "color": "green", "x": 1650, "y": 200 },
+        { "type": "sink", "color": "blue", "x": 1650, "y": 296 },
+        { "type": "wall", "x": 960, "y": 20, "width": 1920, "height": 40 },
+        { "type": "wall", "x": 960, "y": 1060, "width": 1920, "height": 40 },
+        { "type": "wall", "x": 20, "y": 540, "width": 40, "height": 1080 },
+        { "type": "wall", "x": 1900, "y": 540, "width": 40, "height": 1080 }
+      ]
+    },
+    {
+      "id": "level_05",
+      "title": "5. Split Decision",
+      "source": { "x": 200, "y": 650, "rot_deg": 0 },
+      "objects": [
+        { "type": "prism", "x": 600, "y": 400, "rot_deg": 0, "draggable": true, "rotatable": false },
+        { "type": "wall", "x": 1100, "y": 260, "width": 50, "height": 480 },
+        { "type": "sink", "color": "red", "x": 1600, "y": 437 },
+        { "type": "sink", "color": "green", "x": 1600, "y": 650 },
+        { "type": "sink", "color": "blue", "x": 1600, "y": 863 },
+        { "type": "wall", "x": 960, "y": 20, "width": 1920, "height": 40 },
+        { "type": "wall", "x": 960, "y": 1060, "width": 1920, "height": 40 },
+        { "type": "wall", "x": 20, "y": 540, "width": 40, "height": 1080 },
+        { "type": "wall", "x": 1900, "y": 540, "width": 40, "height": 1080 }
+      ]
+    },
+    {
+      "id": "level_06",
+      "title": "6. Needle's Eye",
+      "source": { "x": 200, "y": 540, "rot_deg": 0 },
+      "objects": [
+        { "type": "mirror", "x": 600, "y": 540, "rot_deg": 0, "draggable": false, "rotatable": true },
+        { "type": "wall", "x": 1000, "y": 200, "width": 50, "height": 360 },
+        { "type": "wall", "x": 1000, "y": 780, "width": 50, "height": 600 },
+        { "type": "prism", "x": 1350, "y": 350, "rot_deg": 0, "draggable": false, "rotatable": false },
+        { "type": "sink", "color": "red", "x": 1750, "y": 265 },
+        { "type": "sink", "color": "green", "x": 1750, "y": 350 },
+        { "type": "sink", "color": "blue", "x": 1750, "y": 435 },
+        { "type": "wall", "x": 960, "y": 20, "width": 1920, "height": 40 },
+        { "type": "wall", "x": 960, "y": 1060, "width": 1920, "height": 40 },
+        { "type": "wall", "x": 20, "y": 540, "width": 40, "height": 1080 },
+        { "type": "wall", "x": 1900, "y": 540, "width": 40, "height": 1080 }
+      ]
+    },
+    {
+      "id": "level_07",
+      "title": "7. Prismatic Labyrinth",
+      "source": { "x": 200, "y": 540, "rot_deg": 0 },
+      "objects": [
+        { "type": "prism", "x": 500, "y": 540, "rot_deg": 0, "draggable": false, "rotatable": false },
+        { "type": "sink", "color": "green", "x": 1700, "y": 540 },
+        { "type": "mirror", "x": 800, "y": 750, "rot_deg": 0, "draggable": true, "rotatable": true },
+        { "type": "mirror", "x": 800, "y": 300, "rot_deg": 0, "draggable": true, "rotatable": true },
+        { "type": "wall", "x": 1400, "y": 300, "width": 40, "height": 300 },
+        { "type": "wall", "x": 1400, "y": 780, "width": 40, "height": 300 },
+        { "type": "sink", "color": "red", "x": 1100, "y": 180 },
+        { "type": "sink", "color": "blue", "x": 1100, "y": 900 },
+        { "type": "wall", "x": 960, "y": 20, "width": 1920, "height": 40 },
+        { "type": "wall", "x": 960, "y": 1060, "width": 1920, "height": 40 },
+        { "type": "wall", "x": 20, "y": 540, "width": 40, "height": 1080 },
+        { "type": "wall", "x": 1900, "y": 540, "width": 40, "height": 1080 }
+      ]
+    },
+    {
+      "id": "level_08",
+      "title": "8. Grand Chromatic Finale",
+      "source": { "x": 150, "y": 250, "rot_deg": 0 },
+      "objects": [
+        { "type": "mirror", "x": 450, "y": 250, "rot_deg": 45, "draggable": false, "rotatable": false },
+        { "type": "prism", "x": 450, "y": 540, "rot_deg": 0, "draggable": false, "rotatable": false },
+        { "type": "wall", "x": 950, "y": 540, "width": 40, "height": 200 },
+        { "type": "mirror", "x": 800, "y": 350, "rot_deg": 0, "draggable": true, "rotatable": true },
+        { "type": "mirror", "x": 800, "y": 750, "rot_deg": 0, "draggable": true, "rotatable": true },
+        { "type": "mirror", "x": 1200, "y": 700, "rot_deg": 0, "draggable": true, "rotatable": true },
+        { "type": "sink", "color": "red", "x": 1650, "y": 200 },
+        { "type": "sink", "color": "green", "x": 1650, "y": 540 },
+        { "type": "sink", "color": "blue", "x": 1650, "y": 880 },
+        { "type": "wall", "x": 960, "y": 20, "width": 1920, "height": 40 },
+        { "type": "wall", "x": 960, "y": 1060, "width": 1920, "height": 40 },
+        { "type": "wall", "x": 20, "y": 540, "width": 40, "height": 1080 },
+        { "type": "wall", "x": 1900, "y": 540, "width": 40, "height": 1080 }
+      ]
+    }
+  ]
+}
