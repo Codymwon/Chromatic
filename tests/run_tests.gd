@@ -11,6 +11,8 @@ const Mirror = preload("res://scenes/objects/mirror.gd")
 const MIRROR_SCENE: PackedScene = preload("res://scenes/objects/mirror.tscn")
 const Prism = preload("res://scenes/objects/prism.gd")
 const PRISM_SCENE: PackedScene = preload("res://scenes/objects/prism.tscn")
+const GoalSink = preload("res://scenes/objects/goal_sink.gd")
+const GOAL_SINK_SCENE: PackedScene = preload("res://scenes/objects/goal_sink.tscn")
 const M1TestLevel = preload("res://scenes/level/m1_test_level.gd")
 const M1_LEVEL_SCENE: PackedScene = preload("res://scenes/level/m1_test_level.tscn")
 const M2TestLevel = preload("res://scenes/level/m2_test_level.gd")
@@ -639,6 +641,82 @@ func test_prism_properties() -> void:
 	assert_float_approx(prism.rotation, deg_to_rad(45.0), 0.0001, "Prism rotation should update cleanly")
 
 	prism.free()
+
+func test_goal_sink_scene_instantiation() -> void:
+	var sink: GoalSink = GOAL_SINK_SCENE.instantiate() as GoalSink
+	assert_true(sink != null, "GoalSink scene should instantiate as GoalSink")
+	if sink != null:
+		assert_eq(sink.collision_layer, 8, "GoalSink collision_layer should be 8 (Layer 4: sensors)")
+		assert_eq(sink.collision_mask, 0, "GoalSink collision_mask should be 0")
+		var col_shape: CollisionShape2D = sink.get_node_or_null("CollisionShape2D") as CollisionShape2D
+		assert_true(col_shape != null, "GoalSink should have CollisionShape2D")
+		if col_shape != null:
+			assert_true(col_shape.shape is CircleShape2D, "GoalSink shape should be CircleShape2D")
+			var circle: CircleShape2D = col_shape.shape as CircleShape2D
+			assert_float_approx(circle.radius, 24.0, 0.001, "GoalSink shape radius should be 24.0")
+		var ring: Line2D = sink.get_node_or_null("ReceptacleRing") as Line2D
+		assert_true(ring != null, "GoalSink should have ReceptacleRing Line2D")
+		var core: Polygon2D = sink.get_node_or_null("InnerCore") as Polygon2D
+		assert_true(core != null, "GoalSink should have InnerCore Polygon2D")
+		sink.free()
+
+func test_goal_sink_properties_and_illumination() -> void:
+	var sink: GoalSink = GoalSink.new()
+	assert_eq(sink.collider_type, BeamTypes.ColliderType.SINK, "GoalSink collider_type should be SINK")
+	assert_eq(sink.required_color, BeamTypes.RayColor.RED, "GoalSink default required_color should be RED")
+	sink._ready()
+	assert_eq(sink.collision_layer, 8, "GoalSink collision_layer should default to 8")
+	assert_eq(sink.collision_mask, 0, "GoalSink collision_mask should default to 0")
+
+	assert_eq(sink.is_currently_lit(), false, "GoalSink should start unlit")
+
+	var state_changes: Array[bool] = []
+	sink.lit_state_changed.connect(func(lit: bool): state_changes.append(lit))
+
+	sink.set_lit(true)
+	assert_eq(sink.is_currently_lit(), true, "GoalSink should be lit after set_lit(true)")
+	assert_eq(state_changes.size(), 1, "Should emit lit_state_changed")
+	assert_eq(state_changes[0], true, "Signal should emit true")
+
+	sink.set_lit(false)
+	assert_eq(sink.is_currently_lit(), false, "GoalSink should be unlit after set_lit(false)")
+	assert_eq(state_changes.size(), 2, "Should emit lit_state_changed again")
+	assert_eq(state_changes[1], false, "Signal should emit false")
+
+	# Test notify_beam_hit with matching and non-matching color
+	sink.required_color = BeamTypes.RayColor.BLUE
+	sink.notify_beam_hit(BeamTypes.RayColor.RED)
+	assert_eq(sink.is_currently_lit(), false, "Mismatched color should not light sink")
+
+	sink.notify_beam_hit(BeamTypes.RayColor.BLUE)
+	assert_eq(sink.is_currently_lit(), true, "Matching color should light sink")
+
+	sink.free()
+
+func test_beam_tracer_ray_stops_on_sink() -> void:
+	var sink: GoalSink = GoalSink.new()
+	sink.required_color = BeamTypes.RayColor.GREEN
+
+	var fake_cast := func(origin: Vector2, _dir: Vector2, _exclude: Array[RID]) -> BeamTypes.RayHit:
+		if origin == Vector2.ZERO:
+			var hit := BeamTypes.RayHit.new()
+			hit.point = Vector2(150, 0)
+			hit.collider_type = BeamTypes.ColliderType.SINK
+			hit.collider = sink
+			return hit
+		return null
+
+	var segments: Array[BeamTypes.Segment] = BeamTracer.trace(fake_cast, Vector2.ZERO, Vector2.RIGHT, BeamTypes.RayColor.GREEN)
+	assert_eq(segments.size(), 1, "Ray hitting GoalSink must terminate with exactly 1 segment")
+	if segments.size() > 0:
+		assert_vector_approx(segments[0].a, Vector2.ZERO, 0.001, "Segment start should be origin")
+		assert_vector_approx(segments[0].b, Vector2(150, 0), 0.001, "Segment end should be sink hit point")
+		assert_eq(segments[0].color, BeamTypes.RayColor.GREEN, "Segment color should be GREEN")
+
+	assert_eq(sink.is_currently_lit(), true, "Matching beam ray hit must illuminate GoalSink")
+
+	sink.free()
+
 
 
 func test_mirror_90_degree_reflection() -> void:
