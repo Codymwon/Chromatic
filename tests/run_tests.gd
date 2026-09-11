@@ -5,6 +5,8 @@ const BeamTypes = preload("res://core/beam_types.gd")
 const BeamTracer = preload("res://core/beam_tracer.gd")
 const BeamRenderer = preload("res://scenes/fx/beam_renderer.gd")
 const LightSource = preload("res://scenes/objects/light_source.gd")
+const Wall = preload("res://scenes/objects/wall.gd")
+const WALL_SCENE: PackedScene = preload("res://scenes/objects/wall.tscn")
 const M1TestLevel = preload("res://scenes/level/m1_test_level.gd")
 const M1_LEVEL_SCENE: PackedScene = preload("res://scenes/level/m1_test_level.tscn")
 
@@ -436,6 +438,46 @@ func test_m1_test_level_dirty_flag() -> void:
 	level.mark_dirty()
 	assert_eq(level.is_dirty, true, "mark_dirty() should set is_dirty to true")
 	level.free()
+
+# --- Unit Tests for Wall Obstacle (M2 Issue 01) ---
+
+func test_wall_scene_instantiation() -> void:
+	var wall: Wall = WALL_SCENE.instantiate() as Wall
+	assert_true(wall != null, "Wall scene should instantiate as Wall")
+	if wall != null:
+		assert_eq(wall.collision_layer, 1, "Wall should be on collision layer 1 (walls)")
+		assert_eq(wall.collision_mask, 0, "Wall collision_mask should be 0")
+		var col_shape: CollisionShape2D = wall.get_node_or_null("CollisionShape2D") as CollisionShape2D
+		assert_true(col_shape != null, "Wall should have CollisionShape2D")
+		if col_shape != null:
+			assert_true(col_shape.shape is RectangleShape2D, "Wall shape should be RectangleShape2D")
+		var visual: ColorRect = wall.get_node_or_null("Visual") as ColorRect
+		assert_true(visual != null, "Wall should have Visual ColorRect")
+		wall.free()
+
+func test_wall_properties() -> void:
+	var wall: Wall = Wall.new()
+	assert_eq(wall.collider_type, BeamTypes.ColliderType.WALL, "Wall collider_type should be BeamTypes.ColliderType.WALL")
+	assert_vector_approx(wall.size, Vector2(40.0, 300.0), 0.001, "Wall default size should be (40, 300)")
+	wall.free()
+
+func test_wall_ray_termination() -> void:
+	var hit_point := Vector2(300.0, 100.0)
+	var mock_cast := func(_origin: Vector2, _dir: Vector2, _exclude: Array[RID]) -> BeamTypes.RayHit:
+		return BeamTypes.RayHit.new(
+			hit_point,
+			Vector2.LEFT,
+			BeamTypes.ColliderType.WALL,
+			null,
+			RID()
+		)
+
+	var segments: Array[BeamTypes.Segment] = BeamTracer.trace(mock_cast, Vector2(50.0, 100.0), Vector2.RIGHT)
+	assert_eq(segments.size(), 1, "Ray hitting Wall must terminate with exactly 1 segment")
+	if segments.size() > 0:
+		assert_vector_approx(segments[0].a, Vector2(50.0, 100.0), 0.001, "Segment start should be ray origin")
+		assert_vector_approx(segments[0].b, hit_point, 0.001, "Segment end should terminate at Wall hit point")
+		assert_eq(segments[0].color, BeamTypes.RayColor.WHITE, "Segment color should match incident ray color")
 
 # --- M0 Regression Tests ---
 
