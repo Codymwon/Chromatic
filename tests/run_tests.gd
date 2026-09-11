@@ -16,6 +16,11 @@ const M1_LEVEL_SCENE: PackedScene = preload("res://scenes/level/m1_test_level.ts
 const M2TestLevel = preload("res://scenes/level/m2_test_level.gd")
 const M2_LEVEL_SCENE: PackedScene = preload("res://scenes/level/m2_test_level.tscn")
 
+class MockPrism extends RefCounted:
+	var rotation: float = 0.0
+	func _init(p_rot: float = 0.0) -> void:
+		rotation = p_rot
+
 var _passed_count: int = 0
 var _failed_count: int = 0
 var _current_test_name: String = ""
@@ -754,6 +759,168 @@ func test_parallel_mirrors_infinite_loop_safety() -> void:
 
 	var segments: Array[BeamTypes.Segment] = BeamTracer.trace(fake_cast, Vector2.ZERO, Vector2.RIGHT)
 	assert_eq(segments.size(), GameConstants.MAX_BOUNCES, "Parallel mirrors must safely terminate at exactly MAX_BOUNCES (24)")
+
+# --- Unit Tests for Prism Splitting & Pass-Through (M3 Issue 02) ---
+
+func test_prism_splits_white_to_fixed_rgb_fan() -> void:
+	# Hit prism rotated at 90 degrees from an arbitrary 37 degree incident angle
+	var prism_rot := deg_to_rad(90.0)
+	var fake_cast := func(origin: Vector2, _dir: Vector2, _exclude: Array[RID]) -> BeamTypes.RayHit:
+		if origin == Vector2.ZERO:
+			var hit := BeamTypes.RayHit.new()
+			hit.point = Vector2(100, 0)
+			hit.collider_type = BeamTypes.ColliderType.PRISM
+			hit.collider = MockPrism.new(prism_rot)
+			return hit
+		return null
+
+	var in_dir := Vector2.from_angle(deg_to_rad(37.0))
+	var segments: Array[BeamTypes.Segment] = BeamTracer.trace(fake_cast, Vector2.ZERO, in_dir, BeamTypes.RayColor.WHITE)
+	assert_eq(segments.size(), 4, "White ray hitting prism should produce 4 segments (1 incident + 3 split)")
+	if segments.size() == 4:
+		# Incident ray
+		assert_eq(segments[0].color, BeamTypes.RayColor.WHITE, "Incident segment must be WHITE")
+		assert_vector_approx(segments[0].a, Vector2.ZERO, 0.001, "Incident start mismatch")
+		assert_vector_approx(segments[0].b, Vector2(100, 0), 0.001, "Incident end must be hit point")
+
+		# Red ray (-12 deg from 90 deg = 78 deg)
+		assert_eq(segments[1].color, BeamTypes.RayColor.RED, "First split segment must be RED")
+		var expected_red_dir := Vector2.from_angle(deg_to_rad(78.0)).normalized()
+		var red_dir := (segments[1].b - segments[1].a).normalized()
+		assert_vector_approx(red_dir, expected_red_dir, 0.001, "Red fan angle mismatch (-12 deg relative to prism)")
+		var expected_red_origin := Vector2(100, 0) + expected_red_dir * GameConstants.RAY_STEP_NUDGE
+		assert_vector_approx(segments[1].a, expected_red_origin, 0.001, "Red origin nudge mismatch")
+
+		# Green ray (0 deg from 90 deg = 90 deg)
+		assert_eq(segments[2].color, BeamTypes.RayColor.GREEN, "Second split segment must be GREEN")
+		var expected_green_dir := Vector2.from_angle(deg_to_rad(90.0)).normalized()
+		var green_dir := (segments[2].b - segments[2].a).normalized()
+		assert_vector_approx(green_dir, expected_green_dir, 0.001, "Green fan angle mismatch (0 deg relative to prism)")
+		var expected_green_origin := Vector2(100, 0) + expected_green_dir * GameConstants.RAY_STEP_NUDGE
+		assert_vector_approx(segments[2].a, expected_green_origin, 0.001, "Green origin nudge mismatch")
+
+		# Blue ray (+12 deg from 90 deg = 102 deg)
+		assert_eq(segments[3].color, BeamTypes.RayColor.BLUE, "Third split segment must be BLUE")
+		var expected_blue_dir := Vector2.from_angle(deg_to_rad(102.0)).normalized()
+		var blue_dir := (segments[3].b - segments[3].a).normalized()
+		assert_vector_approx(blue_dir, expected_blue_dir, 0.001, "Blue fan angle mismatch (+12 deg relative to prism)")
+		var expected_blue_origin := Vector2(100, 0) + expected_blue_dir * GameConstants.RAY_STEP_NUDGE
+		assert_vector_approx(segments[3].a, expected_blue_origin, 0.001, "Blue origin nudge mismatch")
+
+func test_prism_incidence_independence() -> void:
+	# Prism fixed at 45 degrees
+	var prism_rot := deg_to_rad(45.0)
+	var fake_cast := func(origin: Vector2, _dir: Vector2, _exclude: Array[RID]) -> BeamTypes.RayHit:
+		if origin == Vector2.ZERO:
+			var hit := BeamTypes.RayHit.new()
+			hit.point = Vector2(100, 50)
+			hit.collider_type = BeamTypes.ColliderType.PRISM
+			hit.collider = MockPrism.new(prism_rot)
+			return hit
+		return null
+
+	var directions: Array[Vector2] = [
+		Vector2.RIGHT,
+		Vector2.DOWN,
+		Vector2(1, -1).normalized(),
+		Vector2(-0.5, 0.866).normalized(),
+	]
+
+	var expected_red_dir := Vector2.from_angle(deg_to_rad(33.0)).normalized()
+	var expected_green_dir := Vector2.from_angle(deg_to_rad(45.0)).normalized()
+	var expected_blue_dir := Vector2.from_angle(deg_to_rad(57.0)).normalized()
+
+	for d in directions:
+		var segs: Array[BeamTypes.Segment] = BeamTracer.trace(fake_cast, Vector2.ZERO, d, BeamTypes.RayColor.WHITE)
+		assert_eq(segs.size(), 4, "Each trace must produce 4 segments")
+		if segs.size() == 4:
+			var r_dir: Vector2 = (segs[1].b - segs[1].a).normalized()
+			var g_dir: Vector2 = (segs[2].b - segs[2].a).normalized()
+			var b_dir: Vector2 = (segs[3].b - segs[3].a).normalized()
+			assert_vector_approx(r_dir, expected_red_dir, 0.001, "Red fan dir must remain invariant to incident angle")
+			assert_vector_approx(g_dir, expected_green_dir, 0.001, "Green fan dir must remain invariant to incident angle")
+			assert_vector_approx(b_dir, expected_blue_dir, 0.001, "Blue fan dir must remain invariant to incident angle")
+
+func test_colored_rays_pass_through_prism() -> void:
+	var prism_rot := deg_to_rad(60.0)
+	var fake_cast := func(origin: Vector2, _dir: Vector2, _exclude: Array[RID]) -> BeamTypes.RayHit:
+		if origin == Vector2.ZERO:
+			var hit := BeamTypes.RayHit.new()
+			hit.point = Vector2(100, 0)
+			hit.collider_type = BeamTypes.ColliderType.PRISM
+			hit.collider = MockPrism.new(prism_rot)
+			return hit
+		return null
+
+	var colors: Array[BeamTypes.RayColor] = [
+		BeamTypes.RayColor.RED,
+		BeamTypes.RayColor.GREEN,
+		BeamTypes.RayColor.BLUE,
+	]
+
+	for c in colors:
+		var in_dir := Vector2(1, 0.5).normalized()
+		var segs: Array[BeamTypes.Segment] = BeamTracer.trace(fake_cast, Vector2.ZERO, in_dir, c)
+		assert_eq(segs.size(), 2, "Monochromatic ray passing through prism must produce exactly 2 segments")
+		if segs.size() == 2:
+			assert_eq(segs[0].color, c, "Incident segment must retain color")
+			assert_eq(segs[1].color, c, "Pass-through segment must retain color without splitting")
+			var pass_dir: Vector2 = (segs[1].b - segs[1].a).normalized()
+			assert_vector_approx(pass_dir, in_dir, 0.001, "Pass-through direction must be unaltered")
+			var expected_pass_origin := Vector2(100, 0) + in_dir * GameConstants.RAY_STEP_NUDGE
+			assert_vector_approx(segs[1].a, expected_pass_origin, 0.001, "Pass-through origin must apply RAY_STEP_NUDGE")
+
+func test_split_colored_ray_mirror_reflection() -> void:
+	# White ray hits Prism at (100, 0) rotated at 0 deg -> Green ray continues RIGHT (0 deg)
+	# Downstream Mirror at (300, 0) rotated at 45 deg reflects Green ray DOWN
+	var prism_rot := 0.0
+	var mirror_norm := Vector2.UP.rotated(deg_to_rad(45.0)).normalized()
+
+	var fake_cast := func(origin: Vector2, dir: Vector2, _exclude: Array[RID]) -> BeamTypes.RayHit:
+		if origin == Vector2.ZERO:
+			# Hits prism at (100, 0)
+			var hit := BeamTypes.RayHit.new()
+			hit.point = Vector2(100, 0)
+			hit.collider_type = BeamTypes.ColliderType.PRISM
+			hit.collider = MockPrism.new(prism_rot)
+			return hit
+		elif origin.x > 99.0 and origin.x < 102.0 and absf(dir.y) < 0.001:
+			# Green ray (dir = RIGHT) hits mirror at (300, 0)
+			var hit := BeamTypes.RayHit.new()
+			hit.point = Vector2(300, 0)
+			hit.normal = mirror_norm
+			hit.collider_type = BeamTypes.ColliderType.MIRROR
+			return hit
+		return null
+
+	var segs: Array[BeamTypes.Segment] = BeamTracer.trace(fake_cast, Vector2.ZERO, Vector2.RIGHT, BeamTypes.RayColor.WHITE)
+	# Segments:
+	# 0: White (0, 0) -> (100, 0)
+	# 1: Red (100, 0) -> open space
+	# 2: Green (100, 0) -> (300, 0)
+	# 3: Green reflected off mirror at (300, 0) -> DOWN to open space
+	# 4: Blue (100, 0) -> open space
+	assert_eq(segs.size(), 5, "Prism split + downstream mirror reflection should produce 5 segments")
+	if segs.size() == 5:
+		assert_eq(segs[2].color, BeamTypes.RayColor.GREEN, "Segment hitting mirror must be GREEN")
+		assert_eq(segs[3].color, BeamTypes.RayColor.GREEN, "Reflected segment must preserve GREEN color")
+		var refl_dir: Vector2 = (segs[3].b - segs[3].a).normalized()
+		assert_vector_approx(refl_dir, Vector2.DOWN, 0.001, "Green ray reflected off 45 deg mirror must point DOWN")
+
+func test_prism_loop_safety_and_max_bounces() -> void:
+	# Opposing prisms/mirrors producing multiple bounces
+	var count: Array[int] = [0]
+	var fake_cast := func(origin: Vector2, dir: Vector2, _exclude: Array[RID]) -> BeamTypes.RayHit:
+		count[0] += 1
+		var hit := BeamTypes.RayHit.new()
+		hit.point = origin + dir * 50.0
+		hit.collider_type = BeamTypes.ColliderType.PRISM
+		hit.collider = MockPrism.new(0.0)
+		return hit
+
+	var segs: Array[BeamTypes.Segment] = BeamTracer.trace(fake_cast, Vector2.ZERO, Vector2.RIGHT, BeamTypes.RayColor.RED)
+	assert_eq(segs.size(), GameConstants.MAX_BOUNCES, "Prism pass-through recursion must safely terminate at MAX_BOUNCES")
+
 
 # --- Integration Tests for Multi-Mirror Test Level (M2 Issue 04) ---
 
