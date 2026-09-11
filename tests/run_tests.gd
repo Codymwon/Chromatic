@@ -348,6 +348,58 @@ func test_beam_renderer_zero_allocations() -> void:
 	assert_eq(renderer.get_child_count(), initial_child_count, "Child count must remain constant across render_segments calls")
 	renderer.free()
 
+func test_beam_renderer_chromatic_palette_and_halo_modulation() -> void:
+	# Assert canonical palette definitions per M3-03
+	assert_eq(BeamRenderer.get_palette_color(BeamTypes.RayColor.WHITE), Color(1.0, 1.0, 1.0, 1.0), "WHITE palette match")
+	assert_eq(BeamRenderer.get_palette_color(BeamTypes.RayColor.RED), Color(1.0, 0.25, 0.25, 1.0), "RED palette match")
+	assert_eq(BeamRenderer.get_palette_color(BeamTypes.RayColor.GREEN), Color(0.25, 1.0, 0.35, 1.0), "GREEN palette match")
+	assert_eq(BeamRenderer.get_palette_color(BeamTypes.RayColor.BLUE), Color(0.25, 0.55, 1.0, 1.0), "BLUE palette match")
+
+	var renderer := BeamRenderer.new()
+	var segs: Array[BeamTypes.Segment] = [
+		BeamTypes.Segment.new(Vector2(0, 0), Vector2(100, 0), BeamTypes.RayColor.WHITE),
+		BeamTypes.Segment.new(Vector2(100, 0), Vector2(200, 0), BeamTypes.RayColor.RED),
+		BeamTypes.Segment.new(Vector2(200, 0), Vector2(300, 0), BeamTypes.RayColor.GREEN),
+		BeamTypes.Segment.new(Vector2(300, 0), Vector2(400, 0), BeamTypes.RayColor.BLUE),
+	]
+
+	renderer.render_segments(segs)
+
+	var active_halos := renderer.get_active_halo_lines()
+	var active_cores := renderer.get_active_core_lines()
+
+	assert_eq(active_halos.size(), 4, "Should have 4 active halo lines")
+	assert_eq(active_cores.size(), 4, "Should have 4 active core lines")
+
+	if active_halos.size() == 4 and active_cores.size() == 4:
+		# Check halo colors
+		assert_eq(active_halos[0].default_color, Color(1.0, 1.0, 1.0, 1.0), "Seg 0 halo should be WHITE")
+		assert_eq(active_halos[1].default_color, Color(1.0, 0.25, 0.25, 1.0), "Seg 1 halo should be RED")
+		assert_eq(active_halos[2].default_color, Color(0.25, 1.0, 0.35, 1.0), "Seg 2 halo should be GREEN")
+		assert_eq(active_halos[3].default_color, Color(0.25, 0.55, 1.0, 1.0), "Seg 3 halo should be BLUE")
+
+		# Check core colors: always pure white
+		for i in range(4):
+			assert_eq(active_cores[i].default_color, Color(1.0, 1.0, 1.0, 1.0), "Core %d must remain pure white" % i)
+
+	# Mutate colors in-place to verify dynamic re-tinting without allocations
+	var mutated_segs: Array[BeamTypes.Segment] = [
+		BeamTypes.Segment.new(Vector2(0, 0), Vector2(100, 0), BeamTypes.RayColor.BLUE),
+		BeamTypes.Segment.new(Vector2(100, 0), Vector2(200, 0), BeamTypes.RayColor.GREEN),
+	]
+	renderer.render_segments(mutated_segs)
+
+	var re_halos := renderer.get_active_halo_lines()
+	var re_cores := renderer.get_active_core_lines()
+	assert_eq(re_halos.size(), 2, "Should have 2 active halo lines after mutation")
+	assert_eq(re_cores.size(), 2, "Should have 2 active core lines after mutation")
+	if re_halos.size() == 2:
+		assert_eq(re_halos[0].default_color, Color(0.25, 0.55, 1.0, 1.0), "Mutated seg 0 halo should now be BLUE")
+		assert_eq(re_halos[1].default_color, Color(0.25, 1.0, 0.35, 1.0), "Mutated seg 1 halo should now be GREEN")
+
+	renderer.free()
+
+
 # --- Unit Tests for LightSource (M1 Issue 04) ---
 
 func test_light_source_defaults() -> void:
