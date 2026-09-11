@@ -20,12 +20,24 @@ var is_dirty: bool = true
 var is_completed: bool = false
 var win_hold_elapsed: float = 0.0
 
+func get_objects_container() -> Node2D:
+	if objects_container == null:
+		objects_container = get_node_or_null("Objects") as Node2D
+	return objects_container
+
+func get_beam_renderer() -> BeamRenderer:
+	if beam_renderer == null:
+		beam_renderer = get_node_or_null("BeamRenderer") as BeamRenderer
+	return beam_renderer
+
 func _ready() -> void:
 	_connect_object_signals()
 	mark_dirty()
 
 func _connect_object_signals() -> void:
-	var container: Node = objects_container if objects_container != null else self
+	var container: Node = get_objects_container()
+	if container == null:
+		container = self
 	for child in container.get_children():
 		if child is Mirror or child is Prism:
 			if child.has_signal("transformed") and not child.transformed.is_connected(mark_dirty):
@@ -65,7 +77,9 @@ func _evaluate_win_condition(delta: float) -> void:
 
 func get_goal_sinks() -> Array[GoalSink]:
 	var sinks: Array[GoalSink] = []
-	var container: Node = objects_container if objects_container != null else self
+	var container: Node = get_objects_container()
+	if container == null:
+		container = self
 	for child in container.get_children():
 		if child is GoalSink:
 			sinks.append(child)
@@ -73,7 +87,9 @@ func get_goal_sinks() -> Array[GoalSink]:
 
 func get_light_sources() -> Array[LightSource]:
 	var sources: Array[LightSource] = []
-	var container: Node = objects_container if objects_container != null else self
+	var container: Node = get_objects_container()
+	if container == null:
+		container = self
 	for child in container.get_children():
 		if child is LightSource:
 			sources.append(child)
