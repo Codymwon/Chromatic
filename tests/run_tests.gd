@@ -5,8 +5,14 @@ const BeamTypes = preload("res://core/beam_types.gd")
 const BeamTracer = preload("res://core/beam_tracer.gd")
 const BeamRenderer = preload("res://scenes/fx/beam_renderer.gd")
 const LightSource = preload("res://scenes/objects/light_source.gd")
+const Wall = preload("res://scenes/objects/wall.gd")
+const WALL_SCENE: PackedScene = preload("res://scenes/objects/wall.tscn")
+const Mirror = preload("res://scenes/objects/mirror.gd")
+const MIRROR_SCENE: PackedScene = preload("res://scenes/objects/mirror.tscn")
 const M1TestLevel = preload("res://scenes/level/m1_test_level.gd")
 const M1_LEVEL_SCENE: PackedScene = preload("res://scenes/level/m1_test_level.tscn")
+const M2TestLevel = preload("res://scenes/level/m2_test_level.gd")
+const M2_LEVEL_SCENE: PackedScene = preload("res://scenes/level/m2_test_level.tscn")
 
 var _passed_count: int = 0
 var _failed_count: int = 0
@@ -435,6 +441,447 @@ func test_m1_test_level_dirty_flag() -> void:
 	assert_eq(level.is_dirty, false, "Level should clear dirty flag after process frame")
 	level.mark_dirty()
 	assert_eq(level.is_dirty, true, "mark_dirty() should set is_dirty to true")
+	level.free()
+
+# --- Unit Tests for Wall (M2 Issue 01) ---
+
+func test_wall_scene_instantiation() -> void:
+	var wall: Wall = WALL_SCENE.instantiate() as Wall
+	assert_true(wall != null, "Wall scene should instantiate as Wall")
+	if wall != null:
+		assert_eq(wall.collision_layer, 1, "Wall should be on collision layer 1 (walls)")
+		assert_eq(wall.collision_mask, 0, "Wall collision_mask should be 0")
+		var col_shape: CollisionShape2D = wall.get_node_or_null("CollisionShape2D") as CollisionShape2D
+		assert_true(col_shape != null, "Wall should have CollisionShape2D")
+		if col_shape != null:
+			assert_true(col_shape.shape is RectangleShape2D, "Wall shape should be RectangleShape2D")
+		var visual: ColorRect = wall.get_node_or_null("Visual") as ColorRect
+		assert_true(visual != null, "Wall should have Visual ColorRect")
+		wall.free()
+
+func test_wall_properties() -> void:
+	var wall: Wall = Wall.new()
+	assert_eq(wall.collider_type, BeamTypes.ColliderType.WALL, "Wall collider_type should be BeamTypes.ColliderType.WALL")
+	wall._ready()
+	assert_eq(wall.collision_layer, 1, "Wall should default to collision layer 1")
+	assert_eq(wall.collision_mask, 0, "Wall should default to collision mask 0")
+	wall.free()
+
+func test_wall_ray_termination() -> void:
+	var hit_point := Vector2(300.0, 100.0)
+	var mock_cast := func(_origin: Vector2, _dir: Vector2, _exclude: Array[RID]) -> BeamTypes.RayHit:
+		return BeamTypes.RayHit.new(
+			hit_point,
+			Vector2.LEFT,
+			BeamTypes.ColliderType.WALL,
+			null,
+			RID()
+		)
+
+	var segments: Array[BeamTypes.Segment] = BeamTracer.trace(mock_cast, Vector2(50.0, 100.0), Vector2.RIGHT)
+	assert_eq(segments.size(), 1, "Ray hitting Wall must terminate with exactly 1 segment")
+	if segments.size() > 0:
+		assert_vector_approx(segments[0].a, Vector2(50.0, 100.0), 0.001, "Segment start should be ray origin")
+		assert_vector_approx(segments[0].b, hit_point, 0.001, "Segment end should terminate at Wall hit point")
+		assert_eq(segments[0].color, BeamTypes.RayColor.WHITE, "Segment color should match incident ray color")
+
+# --- Unit Tests for Mirror Optical Object & Reflection (M2 Issue 02) ---
+
+func test_mirror_scene_instantiation() -> void:
+	var mirror: Mirror = MIRROR_SCENE.instantiate() as Mirror
+	assert_true(mirror != null, "Mirror scene should instantiate as Mirror")
+	if mirror != null:
+		assert_eq(mirror.collision_layer, 2, "Mirror should be on collision layer 2 (mirrors)")
+		assert_eq(mirror.collision_mask, 0, "Mirror collision_mask should be 0")
+		var col_shape: CollisionShape2D = mirror.get_node_or_null("CollisionShape2D") as CollisionShape2D
+		assert_true(col_shape != null, "Mirror should have CollisionShape2D")
+		if col_shape != null:
+			assert_true(col_shape.shape is RectangleShape2D, "Mirror shape should be RectangleShape2D")
+			var rect_shape: RectangleShape2D = col_shape.shape as RectangleShape2D
+			assert_vector_approx(rect_shape.size, Vector2(120.0, 16.0), 0.001, "Mirror shape size should be (120, 16)")
+		var visual_body: ColorRect = mirror.get_node_or_null("VisualBody") as ColorRect
+		assert_true(visual_body != null, "Mirror should have VisualBody ColorRect")
+		var normal_ind: Line2D = mirror.get_node_or_null("NormalIndicator") as Line2D
+		assert_true(normal_ind != null, "Mirror should have NormalIndicator Line2D")
+		mirror.free()
+
+func test_mirror_properties_and_normal() -> void:
+	var mirror: Mirror = Mirror.new()
+	assert_eq(mirror.collider_type, BeamTypes.ColliderType.MIRROR, "Mirror collider_type should be MIRROR")
+	mirror._ready()
+	assert_eq(mirror.collision_layer, 2, "Mirror should default to collision layer 2")
+	assert_eq(mirror.collision_mask, 0, "Mirror should default to collision mask 0")
+
+	var signal_emitted: Array[bool] = [false]
+	mirror.transformed.connect(func(): signal_emitted[0] = true)
+	mirror.rotation = 0.5
+	mirror._notification(CanvasItem.NOTIFICATION_TRANSFORM_CHANGED)
+	assert_true(signal_emitted[0], "Mirror should emit transformed signal upon transform change")
+
+	mirror.rotation = 0.0
+	assert_vector_approx(mirror.get_facing_normal(), Vector2.UP, 0.001, "Normal at rot 0 should be Vector2.UP")
+
+	mirror.rotation = PI / 2.0
+	assert_vector_approx(mirror.get_facing_normal(), Vector2.RIGHT, 0.001, "Normal at rot 90deg should be Vector2.RIGHT")
+
+	mirror.rotation = PI
+	assert_vector_approx(mirror.get_facing_normal(), Vector2.DOWN, 0.001, "Normal at rot 180deg should be Vector2.DOWN")
+
+	mirror.rotation = -PI / 2.0
+	assert_vector_approx(mirror.get_facing_normal(), Vector2.LEFT, 0.001, "Normal at rot -90deg should be Vector2.LEFT")
+
+	mirror.rotation = deg_to_rad(45.0)
+	var expected_45 := Vector2.UP.rotated(deg_to_rad(45.0)).normalized()
+	assert_vector_approx(mirror.get_facing_normal(), expected_45, 0.001, "Normal at rot 45deg mismatch")
+
+	mirror.free()
+
+func test_mirror_90_degree_reflection() -> void:
+	# Ray travelling RIGHT hits a -45° mirror (reflecting UP)
+	var mirror_normal_neg := Vector2.UP.rotated(deg_to_rad(-45.0)).normalized()
+	var fake_cast_up := func(origin: Vector2, _dir: Vector2, _exclude: Array[RID]) -> BeamTypes.RayHit:
+		if origin == Vector2.ZERO:
+			var hit := BeamTypes.RayHit.new()
+			hit.point = Vector2(100, 0)
+			hit.normal = mirror_normal_neg
+			hit.collider_type = BeamTypes.ColliderType.MIRROR
+			return hit
+		return null
+
+	var segments_up: Array[BeamTypes.Segment] = BeamTracer.trace(fake_cast_up, Vector2.ZERO, Vector2.RIGHT)
+	assert_eq(segments_up.size(), 2, "90-degree reflection should produce 2 segments")
+	if segments_up.size() >= 2:
+		assert_vector_approx(segments_up[0].a, Vector2.ZERO, 0.001, "Incoming segment start should be origin")
+		assert_vector_approx(segments_up[0].b, Vector2(100, 0), 0.001, "Incoming segment end should be mirror hit point")
+		assert_vector_approx(segments_up[1].a, Vector2(100, 0), 1.0, "Outgoing segment start should be near hit point")
+		var out_dir: Vector2 = (segments_up[1].b - segments_up[1].a).normalized()
+		assert_vector_approx(out_dir, Vector2.UP, 0.001, "Reflected direction off -45deg mirror should be UP (0, -1)")
+
+	# Ray travelling RIGHT hits a +45° mirror (reflecting DOWN)
+	var mirror_normal_pos := Vector2.UP.rotated(deg_to_rad(45.0)).normalized()
+	var fake_cast_down := func(origin: Vector2, _dir: Vector2, _exclude: Array[RID]) -> BeamTypes.RayHit:
+		if origin == Vector2.ZERO:
+			var hit := BeamTypes.RayHit.new()
+			hit.point = Vector2(100, 0)
+			hit.normal = mirror_normal_pos
+			hit.collider_type = BeamTypes.ColliderType.MIRROR
+			return hit
+		return null
+
+	var segments_down: Array[BeamTypes.Segment] = BeamTracer.trace(fake_cast_down, Vector2.ZERO, Vector2.RIGHT)
+	assert_eq(segments_down.size(), 2, "90-degree reflection should produce 2 segments")
+	if segments_down.size() >= 2:
+		var out_dir_down: Vector2 = (segments_down[1].b - segments_down[1].a).normalized()
+		assert_vector_approx(out_dir_down, Vector2.DOWN, 0.001, "Reflected direction off +45deg mirror should be DOWN (0, 1)")
+
+func test_mirror_two_sided_reflection() -> void:
+	# Facing normal is UP (0, -1)
+	var normal := Vector2.UP
+	var fake_cast_two_sided := func(origin: Vector2, _dir: Vector2, _exclude: Array[RID]) -> BeamTypes.RayHit:
+		if origin == Vector2(0, -100) or origin == Vector2(0, 100):
+			var hit := BeamTypes.RayHit.new()
+			hit.point = Vector2(100, 0)
+			hit.normal = normal
+			hit.collider_type = BeamTypes.ColliderType.MIRROR
+			return hit
+		return null
+
+	# Ray A strikes "front" face from top-left (dir = (1, 1).normalized())
+	var dir_front := Vector2(1, 1).normalized()
+	var segs_front: Array[BeamTypes.Segment] = BeamTracer.trace(fake_cast_two_sided, Vector2(0, -100), dir_front)
+	assert_eq(segs_front.size(), 2, "Front face hit should produce 2 segments")
+	if segs_front.size() >= 2:
+		var out_front: Vector2 = (segs_front[1].b - segs_front[1].a).normalized()
+		var expected_out_front := Vector2(1, -1).normalized()
+		assert_vector_approx(out_front, expected_out_front, 0.001, "Front face reflection angle mismatch")
+
+	# Ray B strikes "back" face from bottom-left (dir = (1, -1).normalized())
+	var dir_back := Vector2(1, -1).normalized()
+	var segs_back: Array[BeamTypes.Segment] = BeamTracer.trace(fake_cast_two_sided, Vector2(0, 100), dir_back)
+	assert_eq(segs_back.size(), 2, "Back face hit should produce 2 segments")
+	if segs_back.size() >= 2:
+		var out_back: Vector2 = (segs_back[1].b - segs_back[1].a).normalized()
+		var expected_out_back := Vector2(1, 1).normalized()
+		assert_vector_approx(out_back, expected_out_back, 0.001, "Back face reflection angle mismatch")
+
+func test_mirror_double_bounce_z_path() -> void:
+	# Origin (0, 100) -> Mirror 1 at (200, 100) rotated 45° (reflects DOWN)
+	# Mirror 2 at (200, 300) rotated 45° (parallel mirror, reflects DOWN to RIGHT) -> Open space
+	var m1_normal := Vector2.UP.rotated(deg_to_rad(45.0)).normalized()
+	var m2_normal := Vector2.UP.rotated(deg_to_rad(45.0)).normalized()
+
+	var fake_cast := func(origin: Vector2, _dir: Vector2, _exclude: Array[RID]) -> BeamTypes.RayHit:
+		if (origin - Vector2(0, 100)).length() < 1.0:
+			var hit := BeamTypes.RayHit.new()
+			hit.point = Vector2(200, 100)
+			hit.normal = m1_normal
+			hit.collider_type = BeamTypes.ColliderType.MIRROR
+			return hit
+		elif (origin - Vector2(200, 100)).length() < 2.0:
+			var hit := BeamTypes.RayHit.new()
+			hit.point = Vector2(200, 300)
+			hit.normal = m2_normal
+			hit.collider_type = BeamTypes.ColliderType.MIRROR
+			return hit
+		return null
+
+	var segments: Array[BeamTypes.Segment] = BeamTracer.trace(fake_cast, Vector2(0, 100), Vector2.RIGHT)
+	assert_eq(segments.size(), 3, "Z-path across two mirrors should produce exactly 3 segments")
+	if segments.size() >= 3:
+		# Segment 0: horizontal to Mirror 1
+		assert_vector_approx(segments[0].a, Vector2(0, 100), 0.001, "Seg 0 start mismatch")
+		assert_vector_approx(segments[0].b, Vector2(200, 100), 0.001, "Seg 0 end mismatch")
+		var dir0: Vector2 = (segments[0].b - segments[0].a).normalized()
+		assert_vector_approx(dir0, Vector2.RIGHT, 0.001, "Seg 0 direction should be RIGHT")
+
+		# Segment 1: vertical down to Mirror 2
+		assert_vector_approx(segments[1].a, Vector2(200, 100), 1.0, "Seg 1 start mismatch")
+		assert_vector_approx(segments[1].b, Vector2(200, 300), 0.001, "Seg 1 end mismatch")
+		var dir1: Vector2 = (segments[1].b - segments[1].a).normalized()
+		assert_vector_approx(dir1, Vector2.DOWN, 0.001, "Seg 1 direction should be DOWN")
+
+		# Segment 2: horizontal to open space
+		assert_vector_approx(segments[2].a, Vector2(200, 300), 1.0, "Seg 2 start mismatch")
+		var dir2: Vector2 = (segments[2].b - segments[2].a).normalized()
+		assert_vector_approx(dir2, Vector2.RIGHT, 0.001, "Seg 2 direction should be RIGHT")
+
+# --- Unit Tests for Glancing Absorption & Loop Safety (M2 Issue 03) ---
+
+func test_glancing_hit_absorbed() -> void:
+	# Near-parallel normal -> |dot(d, n)| < 0.05 -> absorbed
+	var fake_cast := func(_origin: Vector2, _dir: Vector2, _exclude: Array[RID]) -> BeamTypes.RayHit:
+		var hit := BeamTypes.RayHit.new()
+		hit.point = Vector2(100, 0)
+		hit.normal = Vector2(0.01, 0.9999).normalized()
+		hit.collider_type = BeamTypes.ColliderType.MIRROR
+		return hit
+
+	var segments: Array[BeamTypes.Segment] = BeamTracer.trace(fake_cast, Vector2.ZERO, Vector2.RIGHT)
+	assert_eq(segments.size(), 1, "Glancing hit (|d.n| < 0.05) must terminate immediately with 1 segment")
+	if segments.size() > 0:
+		assert_vector_approx(segments[0].a, Vector2.ZERO, 0.001, "Segment start should be origin")
+		assert_vector_approx(segments[0].b, Vector2(100, 0), 0.001, "Segment end should be hit point")
+
+func test_glancing_angle_boundary() -> void:
+	# Test just below threshold (0.04 -> absorbed)
+	var fake_cast_sub := func(_origin: Vector2, _dir: Vector2, _exclude: Array[RID]) -> BeamTypes.RayHit:
+		var hit := BeamTypes.RayHit.new()
+		hit.point = Vector2(100, 0)
+		hit.normal = Vector2(0.04, 0.9992).normalized()
+		hit.collider_type = BeamTypes.ColliderType.MIRROR
+		return hit
+
+	var segs_sub: Array[BeamTypes.Segment] = BeamTracer.trace(fake_cast_sub, Vector2.ZERO, Vector2.RIGHT)
+	assert_eq(segs_sub.size(), 1, "Incidence with dot 0.04 (< 0.05) must be absorbed")
+
+	# Test just above threshold (0.06 -> reflected)
+	var call_idx: Array[int] = [0]
+	var fake_cast_sup := func(_origin: Vector2, _dir: Vector2, _exclude: Array[RID]) -> BeamTypes.RayHit:
+		call_idx[0] += 1
+		if call_idx[0] == 1:
+			var hit := BeamTypes.RayHit.new()
+			hit.point = Vector2(100, 0)
+			hit.normal = Vector2(0.06, 0.9982).normalized()
+			hit.collider_type = BeamTypes.ColliderType.MIRROR
+			return hit
+		return null
+
+	var segs_sup: Array[BeamTypes.Segment] = BeamTracer.trace(fake_cast_sup, Vector2.ZERO, Vector2.RIGHT)
+	assert_eq(segs_sup.size(), 2, "Incidence with dot 0.06 (>= 0.05) must reflect and produce 2 segments")
+
+func test_parallel_mirrors_infinite_loop_safety() -> void:
+	# Two parallel mirrors reflecting back and forth
+	var fake_cast := func(origin: Vector2, dir: Vector2, _exclude: Array[RID]) -> BeamTypes.RayHit:
+		var hit := BeamTypes.RayHit.new()
+		hit.point = origin + dir * 100.0
+		hit.normal = -dir
+		hit.collider_type = BeamTypes.ColliderType.MIRROR
+		return hit
+
+	var segments: Array[BeamTypes.Segment] = BeamTracer.trace(fake_cast, Vector2.ZERO, Vector2.RIGHT)
+	assert_eq(segments.size(), GameConstants.MAX_BOUNCES, "Parallel mirrors must safely terminate at exactly MAX_BOUNCES (24)")
+
+# --- Integration Tests for Multi-Mirror Test Level (M2 Issue 04) ---
+
+func test_m2_test_level_scene_structure() -> void:
+	var instance: Node = M2_LEVEL_SCENE.instantiate()
+	assert_true(instance != null, "M2 test level should instantiate")
+	if instance == null:
+		return
+
+	var renderer_node: Node = instance.get_node_or_null("BeamRenderer")
+	assert_true(renderer_node is BeamRenderer, "Level should contain BeamRenderer")
+
+	var light_source_node: Node = instance.get_node_or_null("LightSource")
+	assert_true(light_source_node is LightSource, "Level should contain LightSource")
+	if light_source_node is LightSource:
+		assert_vector_approx((light_source_node as LightSource).position, Vector2(200, 300), 0.001, "LightSource position mismatch")
+
+	var mirror1_node: Node = instance.get_node_or_null("Mirror1")
+	assert_true(mirror1_node is Mirror, "Level should contain Mirror1")
+	if mirror1_node is Mirror:
+		assert_eq((mirror1_node as Mirror).collision_layer, 2, "Mirror1 collision layer should be 2")
+		assert_vector_approx((mirror1_node as Mirror).position, Vector2(600, 300), 0.001, "Mirror1 position mismatch")
+
+	var mirror2_node: Node = instance.get_node_or_null("Mirror2")
+	assert_true(mirror2_node is Mirror, "Level should contain Mirror2")
+	if mirror2_node is Mirror:
+		assert_eq((mirror2_node as Mirror).collision_layer, 2, "Mirror2 collision layer should be 2")
+		assert_vector_approx((mirror2_node as Mirror).position, Vector2(600, 700), 0.001, "Mirror2 position mismatch")
+
+	var wall_node: Node = instance.get_node_or_null("Wall")
+	assert_true(wall_node is Wall, "Level should contain Wall")
+	if wall_node is Wall:
+		assert_eq((wall_node as Wall).collision_layer, 1, "Wall collision layer should be 1")
+		assert_vector_approx((wall_node as Wall).position, Vector2(1200, 700), 0.001, "Wall position mismatch")
+
+	var p_top: Node = instance.get_node_or_null("PerimeterTop")
+	assert_true(p_top is Wall, "Level should contain PerimeterTop")
+	var p_bot: Node = instance.get_node_or_null("PerimeterBottom")
+	assert_true(p_bot is Wall, "Level should contain PerimeterBottom")
+	var p_left: Node = instance.get_node_or_null("PerimeterLeft")
+	assert_true(p_left is Wall, "Level should contain PerimeterLeft")
+	var p_right: Node = instance.get_node_or_null("PerimeterRight")
+	assert_true(p_right is Wall, "Level should contain PerimeterRight")
+
+	instance.free()
+
+func test_m2_test_level_dirty_flag() -> void:
+	var level: M2TestLevel = M2_LEVEL_SCENE.instantiate() as M2TestLevel
+	level._ready()
+	assert_eq(level.is_dirty, true, "Level should start in dirty state")
+	level._process(0.016)
+	assert_eq(level.is_dirty, false, "Level should clear dirty flag after process frame")
+	var m1: Mirror = level.get_node("Mirror1") as Mirror
+	assert_true(m1 != null, "Mirror1 should exist in level")
+	if m1 != null:
+		m1.rotation += 0.1
+		m1._notification(CanvasItem.NOTIFICATION_TRANSFORM_CHANGED)
+		assert_eq(level.is_dirty, true, "Rotating mirror in level should invalidate dirty state")
+	level.free()
+
+func test_m2_test_level_physics_reflection() -> void:
+	var level: M2TestLevel = M2_LEVEL_SCENE.instantiate() as M2TestLevel
+	var space: PhysicsDirectSpaceState2D = root.world_2d.direct_space_state
+
+	# Create Mirror 1 in physics space
+	var mirror1: Mirror = Mirror.new()
+	mirror1.rotation = deg_to_rad(45.0)
+	var m1_body_rid: RID = PhysicsServer2D.body_create()
+	PhysicsServer2D.body_set_space(m1_body_rid, root.world_2d.space)
+	PhysicsServer2D.body_attach_object_instance_id(m1_body_rid, mirror1.get_instance_id())
+	var m1_shape_rid: RID = PhysicsServer2D.rectangle_shape_create()
+	PhysicsServer2D.shape_set_data(m1_shape_rid, Vector2(60.0, 8.0))
+	PhysicsServer2D.body_add_shape(m1_body_rid, m1_shape_rid, Transform2D(deg_to_rad(45.0), Vector2(600.0, 300.0)))
+	PhysicsServer2D.body_set_collision_layer(m1_body_rid, 2)
+
+	# Create Wall in physics space to catch reflected ray
+	var wall: Wall = Wall.new()
+	var wall_body_rid: RID = PhysicsServer2D.body_create()
+	PhysicsServer2D.body_set_space(wall_body_rid, root.world_2d.space)
+	PhysicsServer2D.body_attach_object_instance_id(wall_body_rid, wall.get_instance_id())
+	var wall_shape_rid: RID = PhysicsServer2D.rectangle_shape_create()
+	PhysicsServer2D.shape_set_data(wall_shape_rid, Vector2(20.0, 20.0))
+	PhysicsServer2D.body_add_shape(wall_body_rid, wall_shape_rid, Transform2D(0.0, Vector2(600.0, 700.0)))
+	PhysicsServer2D.body_set_collision_layer(wall_body_rid, 1)
+
+	var segments: Array[BeamTypes.Segment] = level.update_beam(space)
+	assert_eq(segments.size(), 2, "Physics reflection should produce 2 segments (incident + reflected to wall)")
+	if segments.size() >= 2:
+		assert_vector_approx(segments[0].a, Vector2(224.0, 300.0), 0.001, "Segment 0 start should be aperture origin")
+		assert_vector_approx(segments[0].b, Vector2(600.0, 300.0), 15.0, "Segment 0 end should hit mirror near (600, 300)")
+		var out_dir: Vector2 = (segments[1].b - segments[1].a).normalized()
+		assert_vector_approx(out_dir, Vector2.DOWN, 0.001, "Segment 1 direction should be vertically DOWN")
+		assert_vector_approx(segments[1].b, Vector2(600.0, 700.0), 25.0, "Segment 1 end should terminate at wall near y=700")
+
+	PhysicsServer2D.free_rid(m1_shape_rid)
+	PhysicsServer2D.free_rid(m1_body_rid)
+	PhysicsServer2D.free_rid(wall_shape_rid)
+	PhysicsServer2D.free_rid(wall_body_rid)
+	mirror1.free()
+	wall.free()
+	level.free()
+
+func test_m2_test_level_z_path_physics() -> void:
+	var level: M2TestLevel = M2_LEVEL_SCENE.instantiate() as M2TestLevel
+	var space: PhysicsDirectSpaceState2D = root.world_2d.direct_space_state
+
+	# Mirror 1 at (600, 300) rotated 45° (reflects RIGHT to DOWN)
+	var mirror1: Mirror = Mirror.new()
+	mirror1.rotation = deg_to_rad(45.0)
+	var m1_body: RID = PhysicsServer2D.body_create()
+	PhysicsServer2D.body_set_space(m1_body, root.world_2d.space)
+	PhysicsServer2D.body_attach_object_instance_id(m1_body, mirror1.get_instance_id())
+	var m1_shape: RID = PhysicsServer2D.rectangle_shape_create()
+	PhysicsServer2D.shape_set_data(m1_shape, Vector2(60.0, 8.0))
+	PhysicsServer2D.body_add_shape(m1_body, m1_shape, Transform2D(deg_to_rad(45.0), Vector2(600.0, 300.0)))
+	PhysicsServer2D.body_set_collision_layer(m1_body, 2)
+
+	# Mirror 2 at (600, 700) rotated 45° (reflects DOWN to RIGHT)
+	var mirror2: Mirror = Mirror.new()
+	mirror2.rotation = deg_to_rad(45.0)
+	var m2_body: RID = PhysicsServer2D.body_create()
+	PhysicsServer2D.body_set_space(m2_body, root.world_2d.space)
+	PhysicsServer2D.body_attach_object_instance_id(m2_body, mirror2.get_instance_id())
+	var m2_shape: RID = PhysicsServer2D.rectangle_shape_create()
+	PhysicsServer2D.shape_set_data(m2_shape, Vector2(60.0, 8.0))
+	PhysicsServer2D.body_add_shape(m2_body, m2_shape, Transform2D(deg_to_rad(45.0), Vector2(600.0, 700.0)))
+	PhysicsServer2D.body_set_collision_layer(m2_body, 2)
+
+	# Terminating Wall at (1200, 700)
+	var wall: Wall = Wall.new()
+	var wall_body: RID = PhysicsServer2D.body_create()
+	PhysicsServer2D.body_set_space(wall_body, root.world_2d.space)
+	PhysicsServer2D.body_attach_object_instance_id(wall_body, wall.get_instance_id())
+	var wall_shape: RID = PhysicsServer2D.rectangle_shape_create()
+	PhysicsServer2D.shape_set_data(wall_shape, Vector2(20.0, 150.0))
+	PhysicsServer2D.body_add_shape(wall_body, wall_shape, Transform2D(0.0, Vector2(1200.0, 700.0)))
+	PhysicsServer2D.body_set_collision_layer(wall_body, 1)
+
+	var segments: Array[BeamTypes.Segment] = level.update_beam(space)
+	assert_eq(segments.size(), 3, "Z-path physics query should produce 3 segments (M1 -> M2 -> Wall)")
+	if segments.size() >= 3:
+		# Segment 0: horizontal to Mirror 1
+		assert_vector_approx(segments[0].a, Vector2(224.0, 300.0), 0.001, "Seg 0 start mismatch")
+		assert_vector_approx(segments[0].b, Vector2(600.0, 300.0), 15.0, "Seg 0 hit M1 mismatch")
+		var dir0: Vector2 = (segments[0].b - segments[0].a).normalized()
+		assert_vector_approx(dir0, Vector2.RIGHT, 0.001, "Seg 0 direction should be RIGHT")
+
+		# Segment 1: vertical down to Mirror 2
+		assert_vector_approx(segments[1].a, Vector2(600.0, 300.0), 20.0, "Seg 1 start mismatch")
+		assert_vector_approx(segments[1].b, Vector2(600.0, 700.0), 30.0, "Seg 1 hit M2 mismatch")
+		var dir1: Vector2 = (segments[1].b - segments[1].a).normalized()
+		assert_vector_approx(dir1, Vector2.DOWN, 0.001, "Seg 1 direction should be DOWN")
+
+		# Segment 2: horizontal to terminating Wall
+		assert_vector_approx(segments[2].a, Vector2(600.0, 700.0), 30.0, "Seg 2 start mismatch")
+		assert_vector_approx(segments[2].b, Vector2(1200.0, 700.0), 35.0, "Seg 2 hit Wall mismatch")
+		var dir2: Vector2 = (segments[2].b - segments[2].a).normalized()
+		assert_vector_approx(dir2, Vector2.RIGHT, 0.001, "Seg 2 direction should be RIGHT")
+
+	PhysicsServer2D.free_rid(m1_shape)
+	PhysicsServer2D.free_rid(m1_body)
+	PhysicsServer2D.free_rid(m2_shape)
+	PhysicsServer2D.free_rid(m2_body)
+	PhysicsServer2D.free_rid(wall_shape)
+	PhysicsServer2D.free_rid(wall_body)
+	mirror1.free()
+	mirror2.free()
+	wall.free()
+	level.free()
+
+func test_m2_test_level_zero_allocations() -> void:
+	var level: M2TestLevel = M2_LEVEL_SCENE.instantiate() as M2TestLevel
+	var space: PhysicsDirectSpaceState2D = root.world_2d.direct_space_state
+	var renderer: BeamRenderer = level.get_node("BeamRenderer") as BeamRenderer
+	renderer._init_pool()
+	var initial_child_count: int = renderer.get_child_count()
+	assert_eq(initial_child_count, 64, "Initial pooled child count should be 64")
+
+	for i in range(10):
+		level.update_beam(space)
+
+	assert_eq(renderer.get_child_count(), initial_child_count, "BeamRenderer child count must remain constant (zero runtime allocations)")
 	level.free()
 
 # --- M0 Regression Tests ---

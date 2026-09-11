@@ -1,0 +1,40 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scenes/level/m2_test_level.gd" id="1_level"]
+[ext_resource type="PackedScene" path="res://scenes/fx/beam_renderer.tscn" id="2_renderer"]
+[ext_resource type="PackedScene" path="res://scenes/objects/light_source.tscn" id="3_source"]
+[ext_resource type="PackedScene" path="res://scenes/objects/mirror.tscn" id="4_mirror"]
+[ext_resource type="PackedScene" path="res://scenes/objects/wall.tscn" id="5_wall"]
+
+[node name="M2TestLevel" type="Node2D"]
+script = ExtResource("1_level")
+
+[node name="BeamRenderer" parent="." instance=ExtResource("2_renderer")]
+
+[node name="LightSource" parent="." instance=ExtResource("3_source")]
+position = Vector2(200, 300)
+
+[node name="Mirror1" parent="." instance=ExtResource("4_mirror")]
+position = Vector2(600, 300)
+rotation = 0.785398
+
+[node name="Mirror2" parent="." instance=ExtResource("4_mirror")]
+position = Vector2(600, 700)
+rotation = 0.785398
+
+[node name="Wall" parent="." instance=ExtResource("5_wall")]
+position = Vector2(1200, 700)
+
+[node name="PerimeterTop" parent="." instance=ExtResource("5_wall")]
+position = Vector2(960, 20)
+rotation = 1.5708
+
+[node name="PerimeterBottom" parent="." instance=ExtResource("5_wall")]
+position = Vector2(960, 1060)
+rotation = 1.5708
+
+[node name="PerimeterLeft" parent="." instance=ExtResource("5_wall")]
+position = Vector2(20, 540)
+
+[node name="PerimeterRight" parent="." instance=ExtResource("5_wall")]
+position = Vector2(1900, 540)
