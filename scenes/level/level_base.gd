@@ -397,10 +397,33 @@ func _evaluate_win_condition(delta: float) -> void:
 		win_hold_elapsed += delta
 		if win_hold_elapsed >= GameConstants.WIN_HOLD_TIME:
 			is_completed = true
+			_trigger_victory_feedback()
 			level_completed.emit()
-			_show_win_modal()
+			_trigger_victory_burst_and_modal()
 	else:
 		win_hold_elapsed = 0.0
+
+func _trigger_victory_feedback() -> void:
+	if not is_inside_tree():
+		return
+	var sound_manager: Node = get_node_or_null("/root/SoundManager")
+	if sound_manager and sound_manager.has_method("play_victory"):
+		sound_manager.play_victory()
+
+	var game_state: Node = get_node_or_null("/root/GameState")
+	if game_state and game_state.has_method("trigger_haptic_victory"):
+		game_state.trigger_haptic_victory()
+	elif OS.has_feature("mobile") and Input.has_method("vibrate_handheld"):
+		Input.vibrate_handheld(80)
+
+func _trigger_victory_burst_and_modal() -> void:
+	var victory_burst: Node = get_node_or_null("VictoryBurst")
+	if victory_burst != null and victory_burst.has_method("play_burst"):
+		if victory_burst.has_signal("burst_finished") and not victory_burst.burst_finished.is_connected(_show_win_modal):
+			victory_burst.burst_finished.connect(_show_win_modal, CONNECT_ONE_SHOT)
+		victory_burst.play_burst()
+	else:
+		_show_win_modal()
 
 func _show_win_modal() -> void:
 	if win_overlay == null:

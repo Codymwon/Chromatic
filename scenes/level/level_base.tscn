@@ -5,6 +5,7 @@
 [ext_resource type="PackedScene" path="res://scenes/ui/hud.tscn" id="3_hud"]
 [ext_resource type="PackedScene" path="res://scenes/ui/win_overlay.tscn" id="4_win"]
 [ext_resource type="PackedScene" path="res://scenes/fx/world_environment.tscn" id="5_env"]
+[ext_resource type="PackedScene" path="res://scenes/fx/victory_burst.tscn" id="6_burst"]
 
 [node name="LevelBase" type="Node2D"]
 script = ExtResource("1_base")
@@ -12,6 +13,8 @@ script = ExtResource("1_base")
 [node name="WorldEnvironment" parent="." instance=ExtResource("5_env")]
 
 [node name="HUD" parent="." instance=ExtResource("3_hud")]
+
+[node name="VictoryBurst" parent="." instance=ExtResource("6_burst")]
 
 [node name="WinOverlay" parent="." instance=ExtResource("4_win")]
 
