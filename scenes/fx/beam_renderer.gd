@@ -74,17 +74,4 @@ func render_segments(segments: Array[BeamTypes.Segment]) -> void:
 		_halo_lines[i].visible = false
 		_core_lines[i].visible = false
 
-func get_active_halo_lines() -> Array[Line2D]:
-	var active: Array[Line2D] = []
-	for line in _halo_lines:
-		if line.visible:
-			active.append(line)
-	return active
-
-func get_active_core_lines() -> Array[Line2D]:
-	var active: Array[Line2D] = []
-	for line in _core_lines:
-		if line.visible:
-			active.append(line)
-	return active
 
